@@ -1,0 +1,16 @@
+{
+    "name": "BabyAPI",
+    "version": "0.0.1",
+    "description": "An ESP-now implementation for the API of Baby Buddy",
+    "keywords": "baby,JSON,baby buddy,",
+    "dependencies":
+    [
+        {
+            "owner": "bblanchon",
+            "name": "ArduinoJson",
+            "version": "^6.21.2"
+        }
+        
+        
+    ]
+}

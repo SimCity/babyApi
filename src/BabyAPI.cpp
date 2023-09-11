@@ -2,55 +2,55 @@
 #include "BabyAPI.h"
 
 
-BabyApi::BabyApi(String baby_api_key)
+BabyApi::BabyApi(const char * baby_api_key)
 {
   serverHost = DEFAULT_SERVER_HOST;
   serverPort = DEFAULT_SERVER_PORT;
   babyApiKey = baby_api_key;
 }
 
-BabyApi::BabyApi(String server_host, String baby_api_key)
+BabyApi::BabyApi(const char * server_host, const char * baby_api_key)
 {
   serverHost = server_host;
   serverPort = DEFAULT_SERVER_PORT;
   babyApiKey = baby_api_key;
 }
 
-BabyApi::BabyApi(String server_host, String server_port, String baby_api_key)
+BabyApi::BabyApi(const char * server_host, const char * server_port, const char * baby_api_key)
 {
   serverHost = server_host;
   serverPort = server_port;
   babyApiKey = baby_api_key;
 }
 
-String BabyApi::getServerHost()
+const char * BabyApi::getServerHost()
 {
   return serverHost;
 }
-String BabyApi::getServerPort()
+const char * BabyApi::getServerPort()
 {
   return serverPort;
 }
-String BabyApi::getApiKey()
+const char * BabyApi::getApiKey()
 {
   return babyApiKey;
 }
 
-void BabyApi::setServerHost(String server_host)
+void BabyApi::setServerHost(const char * server_host)
 {
   serverHost = server_host;
 }
 
-void BabyApi::setServerPort(String server_port)
+void BabyApi::setServerPort(const char * server_port)
 {
   serverPort = server_port;
 }
-void BabyApi::setApiKey(String apiKey)
+void BabyApi::setApiKey(const char * apiKey)
 {
   babyApiKey = apiKey;
 }
 
-String BabyApi::httpRequest(const char *endpoint, const char *type, const char *parameters = "", const char *query = "", String requestBody = "", int *responseCode = nullptr)
+String BabyApi::httpRequest(const char *endpoint, const char *type, const char *parameters = "", const char *query = "", char * requestBody = "", int *responseCode = nullptr)
 {
   WiFiClientSecure client;
   HTTPClient https;
@@ -159,9 +159,9 @@ void BabyApi::searchResultParser(DynamicJsonDocument result, long *count, long *
 
 BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
     int offset = -1,
-    String child = "",
-    String date = "",
-    String ordering = "")
+    char * child = "",
+    char * date = "",
+    char * ordering = "")
 {
   BabyApi::searchResults<BabyApi::BMI> outcome;
   int count = 0;

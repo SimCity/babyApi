@@ -36,11 +36,11 @@ class BabyApi
 {
 
 public:
-    BabyApi(String baby_api_key);
+    BabyApi(const char * baby_api_key);
 
-    BabyApi(String server_host, String baby_api_key);
+    BabyApi(const char * server_host, const char * baby_api_key);
 
-    BabyApi(String server_host, String server_port, String baby_api_key);
+    BabyApi(const char * server_host, const char * server_port, const char * baby_api_key);
 
     // SCHEMA
     enum StoolColour
@@ -790,13 +790,13 @@ public:
 
     Profile getProfile();
 
-    char * getServerHost();
-    char * getServerPort();
-    char * getApiKey();
+    const char * getServerHost();
+    const char * getServerPort();
+    const char * getApiKey();
 
-    void setServerHost(char * server_host);
-    void setServerPort(char * server_port);
-    void setApiKey(char * apiKey);
+    void setServerHost(const char * server_host);
+    void setServerPort(const char * server_port);
+    void setApiKey(const char * apiKey);
 
     int startTimer(int childId, char * name = "", int timer = -1);
 
@@ -815,9 +815,9 @@ public:
     uint8_t recordNappyChange(uint16_t child, bool wet, bool solid, uint16_t colour);
 
 protected:
-    char * serverHost;
-    char * serverPort;
-    char * babyApiKey;
+    const char * serverHost;
+    const char * serverPort;
+    const char * babyApiKey;
 };
 
 extern BabyApi babyApi;

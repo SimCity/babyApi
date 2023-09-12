@@ -55,6 +55,8 @@ String BabyApi::httpRequest(const char *endpoint, const char *type, const char *
   WiFiClientSecure client;
   HTTPClient https;
 
+  
+
   https.addHeader("Authorization", "Token " + babyApiKey);
 
   https.begin(client, "https://" + serverHost + ":" + serverPort + ENDPOINT + "/" + endpoint + "/" + parameters + query);
@@ -239,14 +241,14 @@ BabyApi::BMI BabyApi::logBMI(
 {
   DynamicJsonDocument doc(JOSN_CAPACITY);
   BabyApi::BMI outcome;
+  char requestBody[JOSN_CAPACITY] = "";
 
   doc["child"] = child;
   doc["date"] = date;
   doc["bmi"] = bmi;
   doc["notes"] = notes;
   doc["tags"] = serialiseTags(tags);
-
-  String requestBody = "";
+  
   serializeJson(doc, requestBody);
 
   String jsonBuffer;
@@ -277,6 +279,7 @@ BabyApi::BMI BabyApi::updateBMI(
 {
   DynamicJsonDocument doc(JOSN_CAPACITY);
   BabyApi::BMI outcome;
+  char requestBody[JOSN_CAPACITY] = "";
 
   if (child > -1)
     doc["child"] = child;
@@ -287,11 +290,11 @@ BabyApi::BMI BabyApi::updateBMI(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String parameters = "/" + String(id) + "/";
 
-  String requestBody = "";
+
   serializeJson(doc, requestBody);
 
   String jsonBuffer;
@@ -327,13 +330,13 @@ BabyApi::searchResults<BabyApi::DiaperChange> BabyApi::findDiaperChanges(
     int offset = -1,
     int child = -1,
     StoolColour colour = StoolColour::null,
-    String date = "",
-    String date_max = "",
-    String date_min = "",
-    String solid = "",
-    String wet = "",
-    String tags = String(),
-    String ordering = "")
+    char * date = "",
+    char * date_max = "",
+    char * date_min = "",
+    char * solid = "",
+    char * wet = "",
+    char * tags = String(),
+    char * ordering = "")
 {
   BabyApi::searchResults<BabyApi::DiaperChange> outcome;
   int count = 0;
@@ -384,21 +387,21 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
     bool solid,
     StoolColour color = StoolColour::null,
     float amount = NAN,
-    String notes = "",
-    String tags[] = {})
+    char * notes = "",
+    char * tags = {})
 {
   return logDiaperChange(child, "", wet, solid, color, amount, notes, tags);
 }
 
 BabyApi::DiaperChange BabyApi::logDiaperChange(
     int child,
-    String time,
+    char * time,
     bool wet = false,
     bool solid = false,
     StoolColour color = StoolColour::null,
     float amount = NAN,
-    String notes = "",
-    String tags[] = {})
+    char * notes = "",
+    char * tags = {})
 {
   DynamicJsonDocument doc(JOSN_CAPACITY);
   BabyApi::DiaperChange outcome;
@@ -412,7 +415,7 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
   if (!isnan(amount))
     doc["amount"] = amount;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -464,15 +467,15 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(int id)
 BabyApi::DiaperChange BabyApi::updateDiaperChange(
     int id,
     int child = -1,
-    String time = String(),
-    String wet = String(),
-    String solid = String(),
+    char * time = String(),
+    char * wet = String(),
+    char * solid = String(),
     StoolColour color = StoolColour::null,
     float amount = NAN,
     bool updateNotes = false,
-    String notes = String(),
+    char * notes = String(),
     bool updateTags = false,
-    String tags = String())
+    char * tags = String())
 {
   DynamicJsonDocument doc(JOSN_CAPACITY);
   BabyApi::DiaperChange outcome;
@@ -492,7 +495,7 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String parameters = "/" + String(id) + "/";
 
@@ -531,11 +534,11 @@ bool BabyApi::removeDiaperChange(int id)
 
 BabyApi::searchResults<BabyApi::Child> BabyApi::findChildren(
     int offset = -1,
-    String first_name = String(),
-    String last_name = String(),
-    String birth_date = String(),
-    String slug = String(),
-    String ordering = String())
+    char * first_name = String(),
+    char * last_name = String(),
+    char * birth_date = String(),
+    char * slug = String(),
+    char * ordering = String())
 {
   BabyApi::searchResults<BabyApi::Child> outcome;
   int count = 0;
@@ -584,10 +587,10 @@ BabyApi::searchResults<BabyApi::Child> BabyApi::findChildren(
 }
 
 BabyApi::Child BabyApi::newChild(
-    String first_name,
-    String last_name,
-    String birth_date,
-    String picture = String())
+    char * first_name,
+    char * last_name,
+    char * birth_date,
+    char * picture = String())
 {
   DynamicJsonDocument doc(JOSN_CAPACITY);
   BabyApi::Child outcome;
@@ -640,12 +643,12 @@ BabyApi::Child BabyApi::getChild(String slug)
 }
 
 BabyApi::Child BabyApi::updateChild(
-    String slug,
-    String first_name = String(),
-    String last_name = String(),
-    String birth_date = String(),
+    char * slug,
+    char * first_name = String(),
+    char * last_name = String(),
+    char * birth_date = String(),
     bool updatePicture = false,
-    String picture = String())
+    char * picture = String())
 {
   DynamicJsonDocument doc(JOSN_CAPACITY);
   BabyApi::Child outcome;
@@ -693,16 +696,16 @@ bool BabyApi::removeChild(String slug)
 BabyApi::searchResults<BabyApi::Feeding> BabyApi::findFeedingRecords(
     int offset = -1,
     int child = -1,
-    String start = String(),
-    String start_max = String(),
-    String start_min = String(),
-    String end = String(),
-    String end_max = String(),
-    String end_min = String(),
-    String type = String(),
-    String method = String(),
-    String tags = String(),
-    String ordering = String())
+    char * start = String(),
+    char * start_max = String(),
+    char * start_min = String(),
+    char * end = String(),
+    char * end_max = String(),
+    char * end_min = String(),
+    char * type = String(),
+    char * method = String(),
+    char * tags = String(),
+    char * ordering = String())
 {
   BabyApi::searchResults<BabyApi::Feeding> outcome;
   int count = 0;
@@ -779,8 +782,8 @@ BabyApi::Feeding BabyApi::logFeeding(
     FeedingType type,
     FeedingMethod method,
     float amount,
-    String notes = String(),
-    String tags[] = {})
+    char * notes = String(),
+    char * tags[] = {})
 {
   return logFeeding(
       -1,
@@ -796,13 +799,13 @@ BabyApi::Feeding BabyApi::logFeeding(
 
 BabyApi::Feeding BabyApi::logFeeding(
     int child,    // Required unless a Timer value is provided.
-    String start, // Required unless a Timer value is provided.
-    String end,   // Required unless a Timer value is provided.
+    char * start, // Required unless a Timer value is provided.
+    char * end,   // Required unless a Timer value is provided.
     FeedingType type,
     FeedingMethod method,
     float amount = NAN,
-    String notes = String(),
-    String tags[] = {})
+    char * notes = String(),
+    char * tags[] = {})
 {
   return logFeeding(
       child,
@@ -818,14 +821,14 @@ BabyApi::Feeding BabyApi::logFeeding(
 
 BabyApi::Feeding BabyApi::logFeeding(
     int child = -1,          // Required unless a Timer value is provided.
-    String start = String(), // Required unless a Timer value is provided.
-    String end = String(),   // Required unless a Timer value is provided.
+    char * start = String(), // Required unless a Timer value is provided.
+    char * end = String(),   // Required unless a Timer value is provided.
     int timer = -1,          // May be used in place of the Start, End, and/or Child values.
     FeedingType type = FeedingType::empty,
     FeedingMethod method = FeedingMethod::empty,
     float amount = NAN,
-    String notes = String(),
-    String tags[] = {})
+    char * notes = String(),
+    char * tags[] = {})
 {
   BabyApi::Feeding outcome;
   DynamicJsonDocument doc(JOSN_CAPACITY);
@@ -854,7 +857,7 @@ BabyApi::Feeding BabyApi::logFeeding(
   if (!isnan(amount))
     doc["amount"] = amount;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -908,15 +911,15 @@ BabyApi::Feeding BabyApi::getFeeding(int id)
 BabyApi::Feeding BabyApi::updateFeeding(
     int id,
     int child = -1,          // Required unless a Timer value is provided.
-    String start = String(), // Required unless a Timer value is provided.
-    String end = String(),   // Required unless a Timer value is provided.
+    char * start = String(), // Required unless a Timer value is provided.
+    char * end = String(),   // Required unless a Timer value is provided.
     FeedingMethod method = FeedingMethod::null,
     FeedingType type = FeedingType::null,
     float amount = NAN,
     bool updateNotes = false,
-    String notes = String(),
+    char * notes = String(),
     bool updateTags = false,
-    String tags = String())
+    char * tags = String())
 {
   BabyApi::Feeding outcome;
   DynamicJsonDocument doc(JOSN_CAPACITY);
@@ -936,7 +939,7 @@ BabyApi::Feeding BabyApi::updateFeeding(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1025,9 +1028,9 @@ BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenc
 BabyApi::HeadCircumference BabyApi::logHeadCircumference(
     int child,
     float head_circumference,
-    String date,
-    String notes = "",
-    String tags[] = {})
+    char * date,
+    char * notes = "",
+    char * tags[] = {})
 {
   BabyApi::HeadCircumference outcome;
 
@@ -1037,7 +1040,7 @@ BabyApi::HeadCircumference BabyApi::logHeadCircumference(
   doc["date"] = date;
   doc["head_circumference"] = head_circumference;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1084,11 +1087,11 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
     int id,
     int child = -1,
     float head_circumference = NAN,
-    String date = String(),
+    char * date = String(),
     bool updateNotes = false,
-    String notes = String(),
+    char * notes = String(),
     bool updateTags = false,
-    String tags = String())
+    char * tags = String())
 {
   BabyApi::HeadCircumference outcome;
 
@@ -1103,7 +1106,7 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1140,8 +1143,8 @@ bool BabyApi::removeHeadCircumference(int id)
 BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
     int offset = -1,
     int child = -1,
-    String date = String(),
-    String ordering = String())
+    char * date = String(),
+    char * ordering = String())
 {
   BabyApi::searchResults<BabyApi::Height> outcome;
   int count = 0;
@@ -1188,9 +1191,9 @@ BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
 BabyApi::Height BabyApi::logHeight(
     int child,
     float height,
-    String date,
-    String notes = "",
-    String tags[] = {})
+    char * date,
+    char * notes = "",
+    char * tags = "")
 {
   BabyApi::Height outcome;
 
@@ -1200,7 +1203,7 @@ BabyApi::Height BabyApi::logHeight(
   doc["date"] = date;
   doc["height"] = height;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1266,7 +1269,7 @@ BabyApi::Height BabyApi::updateHeight(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1372,7 +1375,7 @@ BabyApi::Note BabyApi::createNote(
   doc["child"] = child;
   doc["date"] = date;
   doc["note"] = note;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1433,7 +1436,7 @@ BabyApi::Note BabyApi::updateNote(
   if (updateNote)
     doc["note"] = note;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1537,7 +1540,7 @@ BabyApi::Pumping BabyApi::logPumping(
   doc["time"] = time;
   doc["amount"] = amount;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1603,7 +1606,7 @@ BabyApi::Pumping BabyApi::updatePumping(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1743,7 +1746,7 @@ BabyApi::Sleep BabyApi::logSleep(
   if (timer > -1)
     doc["timer"] = timer;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -1813,7 +1816,7 @@ BabyApi::Sleep BabyApi::updateSleep(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -2063,7 +2066,7 @@ BabyApi::Temperature BabyApi::logTemperature(
   doc["time"] = time;
   doc["temperature"] = temperature;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -2129,7 +2132,7 @@ BabyApi::Temperature BabyApi::updateTemperature(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -2562,7 +2565,7 @@ BabyApi::TummyTime BabyApi::logTummyTime(
   if (timer > -1)
     doc["timer"] = timer;
   doc["milestone"] = milestone;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -2630,7 +2633,7 @@ BabyApi::TummyTime BabyApi::updateTummyTime(
   if (updateMilestone)
     doc["milestone"] = milestone;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -2728,7 +2731,7 @@ BabyApi::Weight BabyApi::logWeight(
   doc["date"] = date;
   doc["weight"] = weight;
   doc["notes"] = notes;
-  copyArray(tags, doc["tags"]);
+  serialiseTags(tags, doc["tags"]);
 
   String requestBody = "";
   serializeJson(doc, requestBody);
@@ -2794,7 +2797,7 @@ BabyApi::Weight BabyApi::updateWeight(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    copyArray(tags, doc["tags"]);
+    doc["tags"] = serialiseTags(tags);
 
   String requestBody = "";
   serializeJson(doc, requestBody);

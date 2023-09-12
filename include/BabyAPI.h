@@ -67,7 +67,7 @@ public:
         int id;
         int child;
         float bmi;
-        char date[26];
+        char * date[26];
         String notes;
         String tags;
     };

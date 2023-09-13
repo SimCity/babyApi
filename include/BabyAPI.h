@@ -43,16 +43,6 @@ public:
     BabyApi(const char * server_host, const char * server_port, const char * baby_api_key);
 
     // SCHEMA
-    enum StoolColour
-    {
-        null = -1,
-        empty = 0,
-        black,
-        brown,
-        green,
-        yellow
-    };
-
     char *BabyApi::stoolColours[5] =
     {
         "",
@@ -67,42 +57,32 @@ public:
         int id;
         int child;
         float bmi;
-        char * date[26];
-        String notes;
-        String tags;
+        char date[33];
+        char notes[256];
+        char tags[256];
     };
 
     struct DiaperChange
     {
-        int id;
-        int child;
-        String time;
+        uint16_t id;
+        uint16_t child;
+        char time[27];
         bool wet;
         bool solid;
-        StoolColour color;
+        char color[8];
         float amount;
-        String notes;
-        String tags;
+        char notes[256];
+        char tags[256];
     };
 
     struct Child
     {
-        int id;
-        String first_name;
-        String last_name;
-        String birth_date[11];
-        String slug;
-        String picture;
-    };
-
-    enum FeedingType
-    {
-        null = -1,
-        empty = 0,
-        breast_milk,
-        formula,
-        fortified_breast_milk,
-        solid_food
+        uint16_t id;
+        char first_name[256];
+        char last_name[256];
+        char birth_date[11];
+        char slug[101];
+        char picture[];
     };
 
     char *feedingTypes[5] =
@@ -112,18 +92,6 @@ public:
             "Formula",
             "Fortified Breast Milk",
             "Solid Food"};
-
-    enum FeedingMethod
-    {
-        null = -1,
-        empty = 0,
-        bottle,
-        left_breast,
-        right_breast,
-        both_breasts,
-        parent_fed,
-        self_fed
-    };
 
     char *feedingMethods[7] =
         {
@@ -137,139 +105,139 @@ public:
 
     struct Feeding
     {
-        int id;
-        int child;    // Required unless a Timer value is provided.
-        char start[26]; // Required unless a Timer value is provided.
-        char end[26];   // Required unless a Timer value is provided.
-        int timer;    // May be used in place of the Start, End, and/or Child values.
-        char * duration;
-        String type;
-        String method;
+        uint16_t id;
+        uint16_t child;    // Required unless a Timer value is provided.
+        char start[33]; // Required unless a Timer value is provided.
+        char end[33];   // Required unless a Timer value is provided.
+        uint16_t timer;    // May be used in place of the Start, End, and/or Child values.
+        char duration[256];
+        char type[22];
+        char method[13];
         float amount;
-        String notes;
-        String tags;
+        char notes[256];
+        char tags[256];
     };
 
     struct HeadCircumference
     {
-        int id;
-        int child;
+        uint16_t id;
+        uint16_t child;
         float head_circumference;
-        String date[26];
-        String notes;
-        String tags;
+        char date[33];
+        char notes[256];
+        char tags[256];
     };
 
     struct Height
     {
-        int id;
-        int child;
+        uint16_t id;
+        uint16_t child;
         float height;
-        char date[26];
-        String notes;
-        String tags;
+        char date[33];
+        char notes[256];
+        char tags[256];
     };
 
     struct Note
     {
-        int id;
-        int child;
-        String note;
-        char date[26];
-        String tags;
+        uint16_t id;
+        uint16_t child;
+        char note[256];
+        char date[33];
+        char tags[256];
     };
 
     struct Pumping
     {
-        int id;
-        int child;
+        uint16_t id;
+        uint16_t child;
         float amount;
-        String time[26];
-        String notes;
-        String tags;
+        char time[33];
+        char notes[256];
+        char tags[256];
     };
 
     struct Sleep
     {
-        int id;
-        int child;    // Required unless a Timer value is provided.
-        String start[26]; // Required unless a Timer value is provided.
-        String end[26];   // Required unless a Timer value is provided.
-        int timer;    // May be used in place of the Start, End, and/or Child values.
-        String duration;
-        String nap;
-        String notes;
-        String tags;
+        uint16_t id;
+        uint16_t child;    // Required unless a Timer value is provided.
+        char start[33]; // Required unless a Timer value is provided.
+        char end[33];   // Required unless a Timer value is provided.
+        uint16_t timer;    // May be used in place of the Start, End, and/or Child values.
+        char duration[17];
+        bool nap;
+        char notes[256];
+        char tags[256];
     };
 
     struct Tag
     {
-        String slug;
-        String name;
-        String color;
-        String last_used;
+        char slug[101];
+        char name;
+        char color[8];
+        char last_used[33];
     };
 
     struct Temperature
     {
-        int id;
-        int child;
+        uint16_t id;
+        uint16_t child;
         float temperature;
-        String time[26];
-        String notes;
-        String tags;
+        char time[33];
+        char notes[256];
+        char tags[256];
     };
 
     struct Timer
     {
-        int id; // read only
-        int child;
-        String name;
-        String start[26];
-        String end[26];      // read only
-        String duration; // read only
+        uint16_t id; // read only
+        uint16_t child;
+        char name[256];
+        char start[33];
+        char end[33];      // read only
+        char duration[17]; // read only
         bool active;     // read only
-        int user;
+        uint16_t user;
     };
 
     struct TummyTime
     {
-        int id;
-        int child;    // Required unless a Timer value is provided.
-        char * start[26]; // Required unless a Timer value is provided.
-        char * end[26];   // Required unless a Timer value is provided.
-        int timer;    // May be used in place of the Start, End, and/or Child values.
-        char * duration;
-        char * milestone;
-        char * tags;
+        uint16_t id;
+        uint16_t child;    // Required unless a Timer value is provided.
+        char start[33]; // Required unless a Timer value is provided.
+        char end[33];   // Required unless a Timer value is provided.
+        uint16_t timer;    // May be used in place of the Start, End, and/or Child values.
+        char duration[17];
+        char milestone[256];
+        char tags[256];
     };
 
     struct Weight
     {
-        int id;
-        int child;
+        uint16_t id;
+        uint16_t child;
         float weight;
-        String date[26];
-        String notes;
-        String tags;
+        char date[33];
+        char notes[256];
+        char tags[256];
     };
 
     struct User
     {
-        int id;
-        String username;
-        String first_name;
-        String last_name;
-        String email;
+        uint16_t id;
+        char username[151];
+        char first_name[151];
+        char last_name[151];
+        char email[151];
         bool is_staff;
     };
 
     struct Profile
     {
         User user;
-        String language;
-        String timezone;
-        String api_key;
+        char language[256];
+        char timezone[101];
+        char api_key[129];
     };
 
     template <typename T>

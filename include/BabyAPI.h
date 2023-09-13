@@ -288,7 +288,7 @@ public:
     searchResults<DiaperChange> findDiaperChanges(
         int offset = -1,
         int child = -1,
-        StoolColour colour = null,
+        char * colour = "",
         char * date = "",
         char * date_max = "",
         char * date_min = "",
@@ -301,7 +301,7 @@ public:
         int child,
         bool wet,
         bool solid,
-        StoolColour color = StoolColour::null,
+        char * color = "",
         float amount = NAN,
         char * notes = "",
         char * tags[] = {});
@@ -311,7 +311,7 @@ public:
         char * time,
         bool wet = false,
         bool solid = false,
-        StoolColour color = null,
+        char * color = "",
         float amount = NAN,
         char * notes = "",
         char * tags[] = {});
@@ -324,7 +324,7 @@ public:
         char * time = "",
         char * wet = "",
         char * solid = "",
-        StoolColour color = null,
+        char * color = "",
         float amount = NAN,
         bool updateNotes = false,
         char * notes = "",
@@ -377,16 +377,16 @@ public:
         int child,    // Required unless a Timer value is provided.
         char * start, // Required unless a Timer value is provided.
         char * end,   // Required unless a Timer value is provided.
-        FeedingType type,
-        FeedingMethod method,
+        char * type,
+        char * method,
         float amount = NAN,
         char * notes = "",
         char * tags[] = {});
 
     Feeding logFeeding(
         int timer,
-        FeedingType type,
-        FeedingMethod method,
+        char * type,
+        char * method,
         float amount = NAN,
         char * notes = "",
         char * tags[] = {});
@@ -395,8 +395,8 @@ public:
         int child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
-        FeedingType type = FeedingType::empty,
-        FeedingMethod method = FeedingMethod::empty,
+        char * type = "",
+        char * method = "",
         float amount = NAN,
         char * notes = "",
         char * tags[] = {});
@@ -406,8 +406,8 @@ public:
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
         int timer = -1,          // May be used in place of the Start, End, and/or Child values.
-        FeedingType type = FeedingType::empty,
-        FeedingMethod method = FeedingMethod::empty,
+        char * type = "",
+        char * method = "",
         float amount = NAN,
         char * notes = "",
         char * tags[] = {});
@@ -419,8 +419,8 @@ public:
         int child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
-        FeedingMethod method = FeedingMethod::null,
-        FeedingType type = FeedingType::null,
+        char * method = "",
+        char * type = "",
         float amount = NAN,
         bool updateNotes = false,
         char * notes = "",
@@ -772,7 +772,7 @@ public:
 
     uint8_t getAllChildren(Child *children, uint8_t count);
 
-    uint8_t recordFeeding(uint16_t timerId, FeedingType feedingType, FeedingMethod feedingMethod, float amount);
+    uint8_t recordFeeding(uint16_t timerId, char * feedingType, char * feedingMethod, float amount);
 
     uint8_t recordSleep(uint16_t timerId);
 

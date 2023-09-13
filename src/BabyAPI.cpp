@@ -55,7 +55,7 @@ String BabyApi::httpRequest(const char *endpoint, const char *type, const char *
   WiFiClientSecure client;
   HTTPClient https;
 
-  
+
 
   https.addHeader("Authorization", "Token " + babyApiKey);
 
@@ -160,8 +160,8 @@ void BabyApi::searchResultParser(DynamicJsonDocument result, long *count, long *
 }
 
 BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
-    int offset = -1,
-    char * child = "",
+    uint16_t offset = 0,
+    uint16_t child = 0,
     char * date = "",
     char * ordering = "")
 {
@@ -169,16 +169,16 @@ BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
   int count = 0;
 
   String query = "limit=" + SEARCH_LIMIT +
-                         (offset > -1)
+                         (offset > 0)
                      ? ",offset=" + String(offset)
                  : "" +
-                         (child.length() > 0)
+                         (child > 0)
                      ? ",child=" + String(child)
                  : "" +
-                         (date.length() > 0)
+                         (date[0] != '\0')
                      ? ",date=" + String(date)
                  : "" +
-                         (ordering.length() > 0)
+                         (ordering[0] != '\0')
                      ? ",ordering=" + String(ordering)
                      : "";
 
@@ -196,9 +196,9 @@ BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
   {
     outcome.results[count].id = bmiRecord["id"];
     outcome.results[count].child = bmiRecord["child"];
-    outcome.results[count].date = bmiRecord["date"].as<String>();
+    bmiRecord["date"].as<String>().toCharArray(outcome.results[count].date,26);
     outcome.results[count].bmi = bmiRecord["bmi"];
-    outcome.results[count].notes = bmiRecord["notes"].as<String>();
+    bmiRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
     outcome.results[count].tags = deserialiseTags(bmiRecord["tags"].as<JsonArray>());
 
     count++;
@@ -223,10 +223,10 @@ BabyApi::BMI BabyApi::getBMI(int id)
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.bmi = result["bmi"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -259,10 +259,10 @@ BabyApi::BMI BabyApi::logBMI(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.bmi = result["bmi"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -307,10 +307,10 @@ BabyApi::BMI BabyApi::updateBMI(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.bmi = result["bmi"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -433,8 +433,8 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
   outcome.solid = result["solid"];
   outcome.wet = result["wet"];
   outcome.time = result["time"].as<String>();
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -458,8 +458,8 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(int id)
   outcome.solid = result["solid"];
   outcome.wet = result["wet"];
   outcome.time = result["time"].as<String>();
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -515,8 +515,8 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
   outcome.solid = result["solid"];
   outcome.wet = result["wet"];
   outcome.time = result["time"].as<String>();
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -874,10 +874,10 @@ BabyApi::Feeding BabyApi::logFeeding(
   outcome.duration = result["duration"].as<String>();
   outcome.end = result["end"].as<String>();
   outcome.method = result["method"].as<String>();
-  outcome.notes = result["notes"].as<String>();
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
   outcome.start = result["start"].as<String>();
   outcome.type = result["type"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -900,10 +900,10 @@ BabyApi::Feeding BabyApi::getFeeding(int id)
   outcome.duration = result["duration"].as<String>();
   outcome.end = result["end"].as<String>();
   outcome.method = result["method"].as<String>();
-  outcome.notes = result["notes"].as<String>();
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
   outcome.start = result["start"].as<String>();
   outcome.type = result["type"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -958,10 +958,10 @@ BabyApi::Feeding BabyApi::updateFeeding(
   outcome.duration = result["duration"].as<String>();
   outcome.end = result["end"].as<String>();
   outcome.method = result["method"].as<String>();
-  outcome.notes = result["notes"].as<String>();
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
   outcome.start = result["start"].as<String>();
   outcome.type = result["type"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1053,10 +1053,10 @@ BabyApi::HeadCircumference BabyApi::logHeadCircumference(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.head_circumference = result["head_circumference"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1075,10 +1075,10 @@ BabyApi::HeadCircumference BabyApi::getHeadCircumference(int id)
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.head_circumference = result["head_circumference"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1121,10 +1121,10 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.head_circumference = result["head_circumference"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1216,10 +1216,10 @@ BabyApi::Height BabyApi::logHeight(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.height = result["height"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1238,10 +1238,10 @@ BabyApi::Height BabyApi::getHeight(int id)
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.height = result["height"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1284,10 +1284,10 @@ BabyApi::Height BabyApi::updateHeight(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.height = result["height"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1388,9 +1388,9 @@ BabyApi::Note BabyApi::createNote(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.note = result["note"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1409,9 +1409,9 @@ BabyApi::Note BabyApi::getNote(int id)
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.note = result["note"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1451,9 +1451,9 @@ BabyApi::Note BabyApi::updateNote(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.note = result["note"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1555,8 +1555,8 @@ BabyApi::Pumping BabyApi::logPumping(
   outcome.child = result["child"];
   outcome.time = result["time"].as<String>();
   outcome.amount = result["amount"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1577,8 +1577,8 @@ BabyApi::Pumping BabyApi::getPumping(int id)
   outcome.child = result["child"];
   outcome.time = result["time"].as<String>();
   outcome.amount = result["amount"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1623,8 +1623,8 @@ BabyApi::Pumping BabyApi::updatePumping(
   outcome.child = result["child"];
   outcome.time = result["time"].as<String>();
   outcome.amount = result["amount"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1763,8 +1763,8 @@ BabyApi::Sleep BabyApi::logSleep(
   outcome.end = result["end"].as<String>();
   outcome.nap = result["nap"].as<String>();
   outcome.start = result["start"].as<String>();
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1787,8 +1787,8 @@ BabyApi::Sleep BabyApi::getSleep(int id)
   outcome.end = result["end"].as<String>();
   outcome.nap = result["nap"].as<String>();
   outcome.start = result["start"].as<String>();
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -1835,8 +1835,8 @@ BabyApi::Sleep BabyApi::updateSleep(
   outcome.end = result["end"].as<String>();
   outcome.nap = result["nap"].as<String>();
   outcome.start = result["start"].as<String>();
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2081,8 +2081,8 @@ BabyApi::Temperature BabyApi::logTemperature(
   outcome.child = result["child"];
   outcome.time = result["time"].as<String>();
   outcome.temperature = result["temperature"];
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2103,8 +2103,8 @@ BabyApi::Temperature BabyApi::getTemperature(int id)
   outcome.child = result["child"];
   outcome.time = result["time"].as<String>();
   outcome.temperature = result["temperature"];
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2149,8 +2149,8 @@ BabyApi::Temperature BabyApi::updateTemperature(
   outcome.child = result["child"];
   outcome.time = result["time"].as<String>();
   outcome.temperature = result["temperature"];
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2582,7 +2582,7 @@ BabyApi::TummyTime BabyApi::logTummyTime(
   outcome.end = result["end"].as<String>();
   outcome.milestone = result["milestone"].as<String>();
   outcome.start = result["start"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2605,7 +2605,7 @@ BabyApi::TummyTime BabyApi::getTummyTime(int id)
   outcome.end = result["end"].as<String>();
   outcome.milestone = result["milestone"].as<String>();
   outcome.start = result["start"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2652,7 +2652,7 @@ BabyApi::TummyTime BabyApi::updateTummyTime(
   outcome.end = result["end"].as<String>();
   outcome.milestone = result["milestone"].as<String>();
   outcome.start = result["start"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2744,10 +2744,10 @@ BabyApi::Weight BabyApi::logWeight(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.weight = result["weight"];
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2766,10 +2766,10 @@ BabyApi::Weight BabyApi::getWeight(int id)
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.weight = result["weight"];
-  outcome.notes = result["notes"].as<String>();
-    outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+    deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }
@@ -2812,10 +2812,10 @@ BabyApi::Weight BabyApi::updateWeight(
 
   outcome.id = result["id"];
   outcome.child = result["child"];
-  outcome.date = result["date"].as<String>();
+  result["date"].as<String>().toCharArray(outcome.date,33);
   outcome.weight = result["weight"];
-  outcome.notes = result["notes"].as<String>();
-  outcome.tags = deserialiseTags(result["tags"].as<JsonArray>());
+  result["notes"].as<String>().toCharArray(outcome.notes,256);
+  deserialiseTags(result["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
 
   return outcome;
 }

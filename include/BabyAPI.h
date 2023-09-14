@@ -8,7 +8,7 @@
 
 #define DEFAULT_SERVER_HOST "192.168.1.1"
 #define DEFAULT_SERVER_PORT "8000"
-#define ENDPOINT "/api"
+#define ENDPOINT "/api/"
 
 #define BMI_ENDPOINT "bmi/"
 #define CHANGES_ENDPOINT "changes/"
@@ -36,11 +36,11 @@ class BabyApi
 {
 
 public:
-    BabyApi(const char * baby_api_key);
+    BabyApi(char * baby_api_key);
 
-    BabyApi(const char * server_host, const char * baby_api_key);
+    BabyApi(char * server_host, char * baby_api_key);
 
-    BabyApi(const char * server_host, const char * server_port, const char * baby_api_key);
+    BabyApi(char * server_host, char * server_port, char * baby_api_key);
 
     // SCHEMA
     char *BabyApi::stoolColours[5] =
@@ -54,8 +54,8 @@ public:
 
     struct BMI
     {
-        int id;
-        int child;
+        uint16_t id;
+        uint16_t child;
         float bmi;
         char date[33];
         char notes[256];
@@ -173,7 +173,7 @@ public:
     struct Tag
     {
         char slug[101];
-        char name;
+        char name[256];
         char color[8];
         char last_used[33];
     };
@@ -259,23 +259,23 @@ public:
         int *responseCode = nullptr);
 
     searchResults<BMI> findBMIRecords(
-        int offset = -1,
-        char * child = "",
+        uint16_t offset = 0,
+        uint16_t child = 0,
         char * date = "",
         char * ordering = "");
 
-    BMI getBMI(int id);
+    BMI getBMI(uint16_t id);
 
     BMI logBMI(
-        int child,
+        uint16_t child,
         float bmi,
         char * date,
         char * notes = "",
         char * tags = "");
 
     BMI updateBMI(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         float bmi = NAN,
         char * date = "",
         bool updateNotes = false,
@@ -283,11 +283,11 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool deleteBMI(int id);
+    bool deleteBMI(uint16_t id);
 
     searchResults<DiaperChange> findDiaperChanges(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = 0,
+        uint16_t child = 0,
         char * colour = "",
         char * date = "",
         char * date_max = "",
@@ -298,29 +298,29 @@ public:
         char * ordering = "");
 
     BabyApi::DiaperChange BabyApi::logDiaperChange(
-        int child,
+        uint16_t child,
         bool wet,
         bool solid,
         char * color = "",
         float amount = NAN,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
     DiaperChange logDiaperChange(
-        int child,
+        uint16_t child,
         char * time,
         bool wet = false,
         bool solid = false,
         char * color = "",
         float amount = NAN,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
-    DiaperChange getDiaperChange(int id);
+    DiaperChange getDiaperChange(uint16_t id);
 
     DiaperChange updateDiaperChange(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = 0,
         char * time = "",
         char * wet = "",
         char * solid = "",
@@ -331,10 +331,10 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeDiaperChange(int id);
+    bool removeDiaperChange(uint16_t id);
 
     searchResults<Child> findChildren(
-        int offset = -1,
+        uint16_t offset = -1,
         char * first_name = "",
         char * last_name = "",
         char * birth_date = "",
@@ -347,7 +347,7 @@ public:
         char * birth_date,
         char * picture);
 
-    Child getChild(String slug);
+    Child getChild(char * slug);
 
     Child updateChild(
         char * slug,
@@ -357,11 +357,11 @@ public:
         bool updatePicture = false,
         char * picture = "");
 
-    bool removeChild(String slug);
+    bool removeChild(char * slug);
 
     searchResults<Feeding> findFeedingRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * start = "",
         char * start_max = "",
         char * start_min = "",
@@ -374,49 +374,49 @@ public:
         char * ordering = "");
 
     Feeding logFeeding(
-        int child,    // Required unless a Timer value is provided.
+        uint16_t child,    // Required unless a Timer value is provided.
         char * start, // Required unless a Timer value is provided.
         char * end,   // Required unless a Timer value is provided.
         char * type,
         char * method,
         float amount = NAN,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
     Feeding logFeeding(
-        int timer,
+        uint16_t timer,
         char * type,
         char * method,
         float amount = NAN,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
     Feeding logFeeding(
-        int child = -1,          // Required unless a Timer value is provided.
+        uint16_t child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
         char * type = "",
         char * method = "",
         float amount = NAN,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
     Feeding logFeeding(
-        int child = -1,          // Required unless a Timer value is provided.
+        uint16_t child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
-        int timer = -1,          // May be used in place of the Start, End, and/or Child values.
+        uint16_t timer = -1,          // May be used in place of the Start, End, and/or Child values.
         char * type = "",
         char * method = "",
         float amount = NAN,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
-    Feeding getFeeding(int id);
+    Feeding getFeeding(uint16_t id);
 
     Feeding updateFeeding(
-        int id = -1,
-        int child = -1,          // Required unless a Timer value is provided.
+        uint16_t id = -1,
+        uint16_t child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
         char * method = "",
@@ -427,26 +427,26 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeFeeding(int id);
+    bool removeFeeding(uint16_t id);
 
     searchResults<HeadCircumference> findHeadCircumferenceRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * date = "",
         char * ordering = "");
 
     HeadCircumference logHeadCircumference(
-        int child,
+        uint16_t child,
         float head_circumference,
         char * date,
-        char * notes,
-        char * tags[]);
+        char * notes = "",
+        char * tags = "");
 
-    HeadCircumference getHeadCircumference(int id);
+    HeadCircumference getHeadCircumference(uint16_t id);
 
     HeadCircumference updateHeadCircumference(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         float head_circumference = NAN,
         char * date = "",
         bool updateNotes = false,
@@ -454,26 +454,26 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeHeadCircumference(int id);
+    bool removeHeadCircumference(uint16_t id);
 
     searchResults<Height> findHeightRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * date = "",
         char * ordering = "");
 
     Height logHeight(
-        int child,
+        uint16_t child,
         float height,
         char * date,
-        char * notes,
-        char * tags[]);
+        char * notes = "",
+        char * tags = "");
 
-    Height getHeight(int id);
+    Height getHeight(uint16_t id);
 
     Height updateHeight(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         float height = NAN,
         char * date = "",
         bool updateNotes = false,
@@ -481,11 +481,11 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeHeight(int id);
+    bool removeHeight(uint16_t id);
 
     searchResults<Note> findNotes(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * date = "",
         char * date_max = "",
         char * date_min = "",
@@ -493,44 +493,44 @@ public:
         char * ordering = "");
 
     Note createNote(
-        int child,
+        uint16_t child,
         char * note,
         char * date,
-        char * tags[] = {});
+        char * tags = "");
 
-    Note getNote(int id);
+    Note getNote(uint16_t id);
 
     Note updateNote(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         char * date = "",
         bool updateNote = false,
         char * note = "",
         bool updateTags = false,
         char * tags = "");
 
-    bool removeNote(int id);
+    bool removeNote(uint16_t id);
 
     searchResults<Pumping> findPumpingRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * date = "",
         char * date_max = "",
         char * date_min = "",
         char * ordering = "");
 
     Pumping logPumping(
-        int child,
+        uint16_t child,
         float amount,
         char * time = "",
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
-    Pumping getPumping(int id);
+    Pumping getPumping(uint16_t id);
 
     Pumping updatePumping(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         float amount = NAN,
         char * time = "",
         bool updateNotes = false,
@@ -538,11 +538,11 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removePumping(int id);
+    bool removePumping(uint16_t id);
 
     searchResults<Sleep> findSleepRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * start = "",
         char * start_max = "",
         char * start_min = "",
@@ -553,30 +553,30 @@ public:
         char * ordering = "");
 
     Sleep logSleep(
-        int child,
+        uint16_t child,
         char * start,
         char * end,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
     Sleep logSleep(
-        int timer,
+        uint16_t timer,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
     Sleep logSleep(
-        int child = -1,          // Required unless a Timer value is provided.
+        uint16_t child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
-        int timer = -1,          // May be used in place of the Start, End, and/or Child values.
+        uint16_t timer = -1,          // May be used in place of the Start, End, and/or Child values.
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
-    Sleep getSleep(int id);
+    Sleep getSleep(uint16_t id);
 
     Sleep updateSleep(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         char * start = "",
         char * end = "",
         bool updateNotes = false,
@@ -584,10 +584,10 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeSleep(int id);
+    bool removeSleep(uint16_t id);
 
     searchResults<Tag> findAllTags(
-        int offset = -1,
+        uint16_t offset = -1,
         char * name = "",
         char * last_used = "",
         char * ordering = "");
@@ -606,11 +606,11 @@ public:
         bool updateColour = false,
         char * colour = "");
 
-    bool removeTag(String slug);
+    bool removeTag(char * slug);
 
     searchResults<Temperature> findTemperatureRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * date = "",
         char * date_max = "",
         char * date_min = "",
@@ -618,17 +618,17 @@ public:
         char * ordering = "");
 
     Temperature logTemperature(
-        int child,
+        uint16_t child,
         float temperature,
         char * time,
-        char * notes,
-        char * tags[]);
+        char * notes = "",
+        char * tags = "");
 
-    Temperature getTemperature(int id);
+    Temperature getTemperature(uint16_t id);
 
     Temperature updateTemperature(
-        int id = -1,
-        int child = -1,
+        uint16_t id = -1,
+        uint16_t child = -1,
         float temperature = NAN,
         char * time = "",
         bool updateNotes = false,
@@ -636,11 +636,11 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeTemperature(int id);
+    bool removeTemperature(uint16_t id);
 
     searchResults<Timer> findTimers(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * start = "",
         char * start_max = "",
         char * start_min = "",
@@ -648,43 +648,43 @@ public:
         char * end_max = "",
         char * end_min = "",
         char * active = "",
-        int user = -1,
+        uint16_t user = -1,
         char * ordering = "");
 
     Timer createTimer(
-        int child);
+        uint16_t child);
 
     Timer createTimer(
-        int child,
+        uint16_t child,
         char * name);
 
     Timer createTimer(
-        int child,
+        uint16_t child,
         char * start);
 
     Timer createTimer(
-        int child,
+        uint16_t child,
         char * name,
         char * start);
 
-    Timer getTimer(int id);
+    Timer getTimer(uint16_t id);
 
     Timer updateTimer(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         char * name = "",
         char * start = "",
-        int user = -1);
+        uint16_t user = -1);
 
-    bool removeTimer(int id);
+    bool removeTimer(uint16_t id);
 
-    Timer restartTimer(int id);
+    Timer restartTimer(uint16_t id);
 
-    Timer stopTimer(int id);
+    Timer stopTimer(uint16_t id);
 
     searchResults<TummyTime> findTummyTimes(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * start = "",
         char * start_max = "",
         char * start_min = "",
@@ -695,31 +695,31 @@ public:
         char * ordering = "");
 
     TummyTime logTummyTime(
-        int child,    // Required unless a Timer value is provided.
+        uint16_t child,    // Required unless a Timer value is provided.
         char * start, // Required unless a Timer value is provided.
         char * end,   // Required unless a Timer value is provided.
         char * milestone = "",
-        char * tags[] = {});
+        char * tags = "");
 
     TummyTime logTummyTime(
 
-        int timer, // May be used in place of the Start, End, and/or Child values.
+        uint16_t timer, // May be used in place of the Start, End, and/or Child values.
         char * milestone = "",
-        char * tags[] = {});
+        char * tags = "");
 
     TummyTime logTummyTime(
-        int child = -1,          // Required unless a Timer value is provided.
+        uint16_t child = -1,          // Required unless a Timer value is provided.
         char * start = "", // Required unless a Timer value is provided.
         char * end = "",   // Required unless a Timer value is provided.
-        int timer = -1,          // May be used in place of the Start, End, and/or Child values.
+        uint16_t timer = -1,          // May be used in place of the Start, End, and/or Child values.
         char * milestone = "",
-        char * tags[] = {});
+        char * tags = "");
 
-    TummyTime getTummyTime(int id);
+    TummyTime getTummyTime(uint16_t id);
 
     TummyTime updateTummyTime(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         char * start = "",
         char * end = "",
         bool updateMilestone = false,
@@ -727,26 +727,26 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeTummyTime(int id);
+    bool removeTummyTime(uint16_t id);
 
     searchResults<Weight> findWeightRecords(
-        int offset = -1,
-        int child = -1,
+        uint16_t offset = -1,
+        uint16_t child = -1,
         char * date = "",
         char * ordering = "");
 
     Weight logWeight(
-        int child,
+        uint16_t child,
         float weight,
         char * date,
         char * notes = "",
-        char * tags[] = {});
+        char * tags = "");
 
-    Weight getWeight(int id);
+    Weight getWeight(uint16_t id);
 
     Weight updateWeight(
-        int id,
-        int child = -1,
+        uint16_t id,
+        uint16_t child = -1,
         float weight = NAN,
         char * date = "",
         bool updateNotes = false,
@@ -754,7 +754,7 @@ public:
         bool updateTags = false,
         char * tags = "");
 
-    bool removeWeight(int id);
+    bool removeWeight(uint16_t id);
 
     Profile getProfile();
 
@@ -762,13 +762,13 @@ public:
     const char * getServerPort();
     const char * getApiKey();
 
-    void setServerHost(const char * server_host);
-    void setServerPort(const char * server_port);
-    void setApiKey(const char * apiKey);
+    void setServerHost( char * server_host);
+    void setServerPort( char * server_port);
+    void setApiKey( char * apiKey);
 
-    int startTimer(int childId, char * name = "", int timer = -1);
+    uint16_t startTimer(uint16_t childId, char * name = "", uint16_t timer = -1);
 
-    void searchResultParser(DynamicJsonDocument result, long *count, long *next, long *previous);
+    void searchResultParser(long *count, long *next, long *previous);
 
     uint8_t getAllChildren(Child *children, uint8_t count);
 
@@ -782,10 +782,17 @@ public:
 
     uint8_t recordNappyChange(uint16_t child, bool wet, bool solid, uint16_t colour);
 
+
+
 protected:
-    const char * serverHost;
-    const char * serverPort;
-    const char * babyApiKey;
+    char * serverHost;
+    char * serverPort;
+    char * babyApiKey;
+    char requestBody[2048] = "";
+    StaticJsonDocument<JOSN_CAPACITY> doc;
+    StaticJsonDocument<JOSN_CAPACITY> response;
+
+    void ResponseParser(String parse);
 };
 
 extern BabyApi babyApi;

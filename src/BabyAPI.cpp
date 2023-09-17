@@ -2,21 +2,21 @@
 #include "BabyAPI.h"
 
 
-BabyApi::BabyApi(char * baby_api_key)
+BabyApi::BabyApi(const char * baby_api_key)
 {
   setServerHost(DEFAULT_SERVER_HOST);
   setServerPort(DEFAULT_SERVER_PORT);
   setApiKey(baby_api_key);
 }
 
-BabyApi::BabyApi(char * server_host, char * baby_api_key)
+BabyApi::BabyApi(const char * server_host, const char * baby_api_key)
 {
   setServerHost(server_host);
   setServerPort(DEFAULT_SERVER_PORT);
   setApiKey(baby_api_key);
 }
 
-BabyApi::BabyApi(char * server_host, char * server_port, char * baby_api_key)
+BabyApi::BabyApi(const char * server_host, const char * server_port, const char * baby_api_key)
 {
   setServerHost(server_host);
   setServerPort(server_port);
@@ -37,27 +37,33 @@ const char * BabyApi::getApiKey()
 }
 
 
-void BabyApi::setServerHost(char * server_host)
+void BabyApi::setServerHost(const char * server_host)
 {
-  serverHost = server_host;
+  strcpy(serverHost, server_host);
 }
 
-void BabyApi::setServerPort(char * server_port)
+void BabyApi::setServerPort(const char * server_port)
 {
-  serverPort = server_port;
+  strcpy(serverPort, server_port);
+
 }
-void BabyApi::setApiKey(char * apiKey)
+void BabyApi::setApiKey(const char * apiKey)
 {
-        babyApiKey = "Token ";
-      strcat(babyApiKey, apiKey);
+  strcpy(babyApiKey, "Token ");
+  strcat(babyApiKey, apiKey);
 }
 
-String BabyApi::httpRequest(const char *endpoint, const char *type, const char *parameters = "", const char *query = "", char * requestBody = "", int *responseCode = nullptr)
+int BabyApi::httpRequest(
+  const char * endpoint, 
+  const char * type, 
+  const char * parameters = {}, 
+  const char * query = {}, 
+  const char * requestBody = {})
 {
   WiFiClientSecure client;
   HTTPClient https;
 
-  char address[]= "https://";
+  char address[255] = "https://";
 
   strcat(address, getServerHost());
   strcat(address, ":");
@@ -75,18 +81,11 @@ String BabyApi::httpRequest(const char *endpoint, const char *type, const char *
   // Send HTTP POST request
   int httpsResponseCode = https.sendRequest(type, requestBody);
 
-  if (responseCode != nullptr)
-  {
-    *responseCode = httpsResponseCode;
-  }
-
-  String payload = "{}";
-
   if (httpsResponseCode > 0)
   {
     Serial.print("HTTP Response code: ");
     Serial.println(httpsResponseCode);
-    payload = https.getString();
+    ResponseParser(https.getString());
   }
   else
   {
@@ -96,7 +95,7 @@ String BabyApi::httpRequest(const char *endpoint, const char *type, const char *
   // Free resources
   https.end();
 
-  return payload;
+  return httpsResponseCode;
 }
 
 void BabyApi::ResponseParser(String parse)
@@ -118,7 +117,7 @@ JsonArray serialiseTags(char * tags)
   char * tag;
   char * savePtr;
 
-  if(String(tags).length() > 0)
+  if(tags[0] != '\0')
   {
     tag = strtok_r(tags, ",", &savePtr); 
 
@@ -165,41 +164,38 @@ void BabyApi::searchResultParser(long *count, long *next, long *previous)
 
   offsetLocation = response["next"].as<String>().indexOf("offset=");
 
-  *next = (offsetLocation > -1) ? response["next"].as<String>().substring(offsetLocation + 7).toInt() : -1;
+  *next = (offsetLocation > 0) ? response["next"].as<String>().substring(offsetLocation + 7).toInt() : 0;
 
   offsetLocation = response["previous"].as<String>().indexOf("offset=");
 
-  *previous = (offsetLocation > -1) ? response["previous"].as<String>().substring(offsetLocation + 7).toInt() : -1;
+  *previous = (offsetLocation > 0) ? response["previous"].as<String>().substring(offsetLocation + 7).toInt() : 0;
 }
 
 BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = "",
-    char * ordering = "")
+    const char * date = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::BMI> outcome;
   uint16_t count = 0;
+    
+  snprintf(query,256,"limit=%d%s%s%s%s",
+    SEARCH_LIMIT,
+    (offset > 0) ? ",offset=" + String(offset) : "",
+    (child > 0) ? ",child=" + String(child) : "",
+    (date[0] != '\0') ? ",date=" + String(date) : "",
+    (ordering[0] != '\0') ? ",ordering=" + String(ordering) : ""
+  );
 
-  String query = "limit=" + SEARCH_LIMIT +
-                         (offset > 0)
-                     ? ",offset=" + String(offset)
-                 : "" +
-                         (child > 0)
-                     ? ",child=" + String(child)
-                 : "" +
-                         (date[0] != '\0')
-                     ? ",date=" + String(date)
-                 : "" +
-                         (ordering[0] != '\0')
-                     ? ",ordering=" + String(ordering)
-                     : "";
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(BMI_ENDPOINT, "GET", "", query.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -224,13 +220,15 @@ BabyApi::BMI BabyApi::getBMI(uint16_t id)
 {
   BabyApi::BMI outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(BMI_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -247,8 +245,8 @@ BabyApi::BMI BabyApi::logBMI(
     uint16_t child,
     float bmi,
     char * date,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   
   BabyApi::BMI outcome;
@@ -263,11 +261,13 @@ BabyApi::BMI BabyApi::logBMI(
   
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(BMI_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -281,20 +281,20 @@ BabyApi::BMI BabyApi::logBMI(
 
 BabyApi::BMI BabyApi::updateBMI(
     uint16_t id,
-    uint16_t child = -1,
+    uint16_t child = 0,
     float bmi = NAN,
-    char * date = "",
+    char * date = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   
   BabyApi::BMI outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (date != '\0')
     doc["date"] = date;
@@ -310,11 +310,13 @@ BabyApi::BMI BabyApi::updateBMI(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(BMI_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   JsonArray results = response["results"].as<JsonArray>();
 
@@ -331,46 +333,49 @@ BabyApi::BMI BabyApi::updateBMI(
 bool BabyApi::deleteBMI(uint16_t id)
 {
   String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(BMI_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+
+  int responseCode = httpRequest(BMI_ENDPOINT, "DELETE", parameters.c_str(), "", "");
+  Serial.println(responseCode);
 
   return responseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::DiaperChange> BabyApi::findDiaperChanges(
-    uint16_t offset = -1,
-    uint16_t child = -1,
-    char * colour = "",
-    char * date = "",
-    char * date_max = "",
-    char * date_min = "",
-    char * solid = "",
-    char * wet = "",
-    char * tags = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    uint16_t child = 0,
+     char * colour = {},
+     char * date = {},
+     char * date_max = {},
+     char * date_min = {},
+     char * solid = {},
+     char * wet = {},
+     char * tags = {},
+     char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::DiaperChange> outcome;
   uint16_t count = 0;
+  
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
+    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
+    colour[0] != '\0' ? "&colour=" + String(colour) : "",
+    solid[0] != '\0' ? "&solid=" + String(solid) : "",
+    wet[0] != '\0' ? "&wet=" + String(wet) : "",
+    tags[0] != '\0' ? "&tags=" + String(tags) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                 ((offset > -1) ? "&offset=" + String(offset) : "") +
-                 ((offset > -1) ? "&child=" + String(child) : "") +
-                 ((date[0] != '\0') ? "&date=" + String(date) : "") +
-                 ((date_max[0] != '\0') ? "&date_max=" + String(date_max) : "") +
-                 ((date_min[0] != '\0') ? "&date_min=" + String(date_min) : "") +
-                 ((colour[0] != '\0') ? "&colour=" + String(colour) : "") +
-                 ((solid[0] != '\0') ? "&solid=" + String(solid) : "") +
-                 ((wet[0] != '\0') ? "&wet=" + String(wet) : "") +
-                 ((tags[0] != '\0') ? "&tags=" + String(tags) : "") +
-                 ((ordering[0] != '\0') ? "&ordering=" + String(ordering) : "");
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "GET", "", query.c_str());
-  Serial.println(jsonBuffer);
-
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -398,9 +403,9 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
     uint16_t child,
     bool wet,
     bool solid,
-    char * color = "",
+    char * color = {},
     float amount = NAN,
-    char * notes = "",
+    char * notes = {},
     char * tags = {})
 {
   return logDiaperChange(child, "", wet, solid, color, amount, notes, tags);
@@ -411,9 +416,9 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
     char * time,
     bool wet = false,
     bool solid = false,
-    char * color = "",
+    char * color = {},
     float amount = NAN,
-    char * notes = "",
+    char * notes = {},
     char * tags = {})
 {
   
@@ -432,14 +437,15 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
   doc["notes"] = notes;
   doc["tags"] = serialiseTags(tags);
 
-  char requestBody[2056] = "";
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -461,11 +467,13 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(uint16_t id)
 
   String parameters = "/" + String(id) + "/";
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "GET", parameters.c_str());
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -482,23 +490,23 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(uint16_t id)
 
 BabyApi::DiaperChange BabyApi::updateDiaperChange(
     uint16_t id,
-    uint16_t child = -1,
-    char * time = "",
-    char * wet = "",
-    char * solid = "",
-    char * color = "",
+    uint16_t child = 0,
+    char * time = {},
+    char * wet = {},
+    char * solid = {},
+    char * color = {},
     float amount = NAN,
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   
   BabyApi::DiaperChange outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (time[0] != '\0')
     doc["time"] = time;
@@ -517,14 +525,15 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
 
   String parameters = "/" + String(id) + "/";
 
-  char requestBody[2048];
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -542,50 +551,41 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
 bool BabyApi::removeDiaperChange(uint16_t id)
 {
   String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str());
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Child> BabyApi::findChildren(
-    uint16_t offset = -1,
-    char * first_name = "",
-    char * last_name = "",
-    char * birth_date = "",
-    char * slug = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    char * first_name = {},
+    char * last_name = {},
+    char * birth_date = {},
+    char * slug = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Child> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (!offset > 0)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (first_name != '\0')
-                     ? "&first_name=" + String(first_name)
-                 : "" +
-                         (last_name != '\0')
-                     ? "&last_name=" + String(last_name)
-                 : "" +
-                         (birth_date != '\0')
-                     ? "&birth_date=" + String(birth_date)
-                 : "" +
-                         (slug != '\0')
-                     ? "&slug=" + String(slug)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    first_name[0] != '\0' ? ",first_name=" + String(first_name) : "",
+    last_name[0] != '\0' ? "&last_name=" + String(last_name) : "",
+    birth_date[0] != '\0' ? "&birth_date=" + String(birth_date) : "",
+    slug[0] != '\0' ? "&slug=" + String(slug) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHILDREN_ENDPOINT, "GET", "", query.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -608,7 +608,7 @@ BabyApi::Child BabyApi::newChild(
     char * first_name,
     char * last_name,
     char * birth_date,
-    char * picture = "")
+    char * picture = {})
 {
   BabyApi::Child outcome;
 
@@ -621,11 +621,13 @@ BabyApi::Child BabyApi::newChild(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHILDREN_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   response["first_name"].as<String>().toCharArray(outcome.first_name,256);
@@ -644,11 +646,13 @@ BabyApi::Child BabyApi::getChild(char * slug)
 
   String parameters = "/" + String(slug) + "/";
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHILDREN_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "GET", parameters.c_str());
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   response["first_name"].as<String>().toCharArray(outcome.first_name,256);
@@ -662,11 +666,11 @@ BabyApi::Child BabyApi::getChild(char * slug)
 
 BabyApi::Child BabyApi::updateChild(
     char * slug,
-    char * first_name = "",
-    char * last_name = "",
-    char * birth_date = "",
+    char * first_name = {},
+    char * last_name = {},
+    char * birth_date = {},
     bool updatePicture = false,
-    char * picture = "")
+    char * picture = {})
 {
   
   BabyApi::Child outcome;
@@ -686,11 +690,13 @@ BabyApi::Child BabyApi::updateChild(
 
   String parameters = "/" + String(slug) + "/";
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHILDREN_ENDPOINT, "PATCH", parameters.c_str(), "", babyApi.requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "PATCH", parameters.c_str(), "", babyApi.requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   response["first_name"].as<String>().toCharArray(outcome.first_name,256);
@@ -704,71 +710,48 @@ BabyApi::Child BabyApi::updateChild(
 bool BabyApi::removeChild(char *slug)
 {
   String parameters = "/" + String(slug) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHILDREN_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "DELETE", parameters.c_str());
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Feeding> BabyApi::findFeedingRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * start = "",
-    char * start_max = "",
-    char * start_min = "",
-    char * end = "",
-    char * end_max = "",
-    char * end_min = "",
-    char * type = "",
-    char * method = "",
-    char * tags = "",
-    char * ordering = "")
+    char * start = {},
+    char * start_max = {},
+    char * start_min = {},
+    char * end = {},
+    char * end_max = {},
+    char * end_min = {},
+    char * type = {},
+    char * method = {},
+    char * tags = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Feeding> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > 0)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > 0)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (start[0] != '\0')
-                     ? "&start=" + String(start)
-                 : "" +
-                         (start_max != '\0')
-                     ? "&start_max=" + String(start_max)
-                 : "" +
-                         (start_min != '\0')
-                     ? "&date_min=" + String(start_min)
-                 : "" +
-                         (end != '\0')
-                     ? "&end=" + String(end)
-                 : "" +
-                         (end_max != '\0')
-                     ? "&end_max=" + String(end_max)
-                 : "" +
-                         (end_min != '\0')
-                     ? "&end_min=" + String(end_min)
-                 : "" +
-                         (type != '\0')
-                     ? "&type=" + String(type)
-                 : "" +
-                         (method != '\0')
-                     ? "&method=" + String(method)
-                 : "" +
-                         (tags != '\0')
-                     ? "&tags=" + String(tags)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    start[0] != '\0' ? ",start=" + String(start) : "",
+    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
+    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
+    end[0] != '\0' ? ",end=" + String(start) : "",
+    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
+    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
+    type[0] != '\0' ? "&type=" + String(type) : "",
+    method[0] != '\0' ? "&method=" + String(method) : "",
+    tags[0] != '\0' ? "&tags=" + String(tags) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(FEEDINGS_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(FEEDINGS_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -801,8 +784,8 @@ BabyApi::Feeding BabyApi::logFeeding(
     char * type,
     char * method,
     float amount,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   return logFeeding(
       0,
@@ -823,8 +806,8 @@ BabyApi::Feeding BabyApi::logFeeding(
     char * type,
     char * method,
     float amount = NAN,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   return logFeeding(
       child,
@@ -839,21 +822,21 @@ BabyApi::Feeding BabyApi::logFeeding(
 }
 
 BabyApi::Feeding BabyApi::logFeeding(
-    uint16_t child = -1,          // Required unless a Timer value is provided.
-    char * start = "", // Required unless a Timer value is provided.
-    char * end = "",   // Required unless a Timer value is provided.
-    uint16_t timer = -1,          // May be used in place of the Start, End, and/or Child values.
-    char * type = "",
-    char * method = "",
+    uint16_t child = 0,          // Required unless a Timer value is provided.
+    char * start = {}, // Required unless a Timer value is provided.
+    char * end = {},   // Required unless a Timer value is provided.
+    uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
+    char * type = {},
+    char * method = {},
     float amount = NAN,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   BabyApi::Feeding outcome;
   doc.clear();
 
   // if no tmer value present, child start and end are required fields
-  if (timer == -1 && (child == -1 || start[0] != '\0'  || end[0] != '\0' ))
+  if (timer == 0 && (child == 0 || start[0] != '\0'  || end[0] != '\0' ))
   {
     Serial.println("Missing child, start and end, these are required if no timer id provided:");
     Serial.print("child: ");
@@ -865,11 +848,11 @@ BabyApi::Feeding BabyApi::logFeeding(
     return outcome;
   }
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   doc["start"] = start;
   doc["end"] = end;
-  if (timer > -1)
+  if (timer > 0)
     doc["timer"] = timer;
   doc["type"] = type;
   doc["method"] = method;
@@ -928,22 +911,22 @@ BabyApi::Feeding BabyApi::getFeeding(uint16_t id)
 
 BabyApi::Feeding BabyApi::updateFeeding(
     uint16_t id,
-    uint16_t child = -1,          // Required unless a Timer value is provided.
-    char * start = "", // Required unless a Timer value is provided.
-    char * end = "",   // Required unless a Timer value is provided.
-    char * method = "",
-    char * type = "",
+    uint16_t child = 0,          // Required unless a Timer value is provided.
+    char * start = {}, // Required unless a Timer value is provided.
+    char * end = {},   // Required unless a Timer value is provided.
+    char * method = {},
+    char * type = {},
     float amount = NAN,
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::Feeding outcome;
   
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (start[0] != '\0' )
     doc["start"] = start;
@@ -998,28 +981,22 @@ bool BabyApi::removeFeeding(uint16_t id)
 BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenceRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = "",
-    char * ordering = "")
+    char * date = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::HeadCircumference> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > -1)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (date[0] != '\0')
-                     ? "&date=" + String(date)
-                 : "" +
-                         (ordering[0] != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1047,8 +1024,8 @@ BabyApi::HeadCircumference BabyApi::logHeadCircumference(
     uint16_t child,
     float head_circumference,
     char * date,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   BabyApi::HeadCircumference outcome;
 
@@ -1102,19 +1079,19 @@ BabyApi::HeadCircumference BabyApi::getHeadCircumference(uint16_t id)
 
 BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
     uint16_t id,
-    uint16_t child = -1,
+    uint16_t child = 0,
     float head_circumference = NAN,
-    char * date = "",
+    char * date = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::HeadCircumference outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (date[0] != '\0')
     doc["date"] = date;
@@ -1157,30 +1134,24 @@ bool BabyApi::removeHeadCircumference(uint16_t id)
 }
 
 BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
-    uint16_t offset = -1,
-    uint16_t child = -1,
-    char * date = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    uint16_t child = 0,
+    char * date = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Height> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > -1)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (date[0] != '\0')
-                     ? "&date=" + String(date)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(HEIGHT_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(HEIGHT_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1208,8 +1179,8 @@ BabyApi::Height BabyApi::logHeight(
     uint16_t child,
     float height,
     char * date,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   BabyApi::Height outcome;
 
@@ -1263,19 +1234,19 @@ BabyApi::Height BabyApi::getHeight(uint16_t id)
 
 BabyApi::Height BabyApi::updateHeight(
     uint16_t id,
-    uint16_t child = -1,
+    uint16_t child = 0,
     float height = NAN,
-    char * date = "",
+    char * date = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   Height outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (date != '\0')
     doc["date"] = date;
@@ -1320,40 +1291,28 @@ bool BabyApi::removeHeight(uint16_t id)
 BabyApi::searchResults<BabyApi::Note> BabyApi::findNotes(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = "",
-    char * date_max = "",
-    char * date_min = "",
-    char * tags = "",
-    char * ordering = "")
+    char * date = {},
+    char * date_max = {},
+    char * date_min = {},
+    char * tags = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Note> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > 0)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > 0)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (date != '\0')
-                     ? "&date=" + String(date)
-                 : "" +
-                         (date_max != '\0')
-                     ? "&date_max=" + String(date_max)
-                 : "" +
-                         (date_min != '\0')
-                     ? "&date_min=" + String(date_min)
-                 : "" +
-                         (tags != '\0')
-                     ? "&tags=" + String(tags)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
+    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
+    tags[0] != '\0' ? "&tags=" + String(tags) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(NOTES_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(NOTES_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1380,7 +1339,7 @@ BabyApi::Note BabyApi::createNote(
     uint16_t child,
     char * note,
     char * date,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::Note outcome;
 
@@ -1431,18 +1390,18 @@ BabyApi::Note BabyApi::getNote(uint16_t id)
 
 BabyApi::Note BabyApi::updateNote(
     uint16_t id,
-    uint16_t child = -1,
-    char * date = "",
+    uint16_t child = 0,
+    char * date = {},
     bool updateNote = false,
-    char * note = "",
+    char * note = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::Note outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (date != '\0')
     doc["date"] = date;
@@ -1482,38 +1441,28 @@ bool BabyApi::removeNote(uint16_t id)
 }
 
 BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
-    uint16_t offset = -1,
-    uint16_t child = -1,
-    char * date = "",
-    char * date_max = "",
-    char * date_min = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    uint16_t child = 0,
+    char * date = {},
+    char * date_max = {},
+    char * date_min = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Pumping> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > -1)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (date != '\0')
-                     ? "&date=" + String(date)
-                 : "" +
-                         (date_max != '\0')
-                     ? "&date_max=" + String(date_max)
-                 : "" +
-                         (date_min != '\0')
-                     ? "&date_min=" + String(date_min)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
+    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1540,9 +1489,9 @@ BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
 BabyApi::Pumping BabyApi::logPumping(
     uint16_t child,
     float amount,
-    char * time = "",
-    char * notes = "",
-    char * tags = "")
+    char * time = {},
+    char * notes = {},
+    char * tags = {})
 {
   BabyApi::Pumping outcome;
 
@@ -1596,19 +1545,19 @@ BabyApi::Pumping BabyApi::getPumping(uint16_t id)
 
 BabyApi::Pumping BabyApi::updatePumping(
     uint16_t id,
-    uint16_t child = -1,
+    uint16_t child = 0,
     float amount = NAN,
-    char * time = "",
+    char * time = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::Pumping outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (time != '\0')
     doc["time"] = time;
@@ -1621,10 +1570,10 @@ BabyApi::Pumping BabyApi::updatePumping(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256, "/%d/", id);
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
+  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "PATCH", parameters, "", requestBody);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1653,52 +1602,34 @@ bool BabyApi::removePumping(uint16_t id)
 BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * start = "",
-    char * start_max = "",
-    char * start_min = "",
-    char * end = "",
-    char * end_max = "",
-    char * end_min = "",
-    char * tags = "",
-    char * ordering = "")
+    char * start = {},
+    char * start_max = {},
+    char * start_min = {},
+    char * end = {},
+    char * end_max = {},
+    char * end_min = {},
+    char * tags = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Sleep> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > 0)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > 0)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (start != '\0')
-                     ? "&start=" + String(start)
-                 : "" +
-                         (start_max != '\0')
-                     ? "&start_max=" + String(start_max)
-                 : "" +
-                         (start_min != '\0')
-                     ? "&date_min=" + String(start_min)
-                 : "" +
-                         (end != '\0')
-                     ? "&end=" + String(end)
-                 : "" +
-                         (end_max != '\0')
-                     ? "&end_max=" + String(end_max)
-                 : "" +
-                         (end_min != '\0')
-                     ? "&end_min=" + String(end_min)
-                 : "" +
-                         (tags != '\0')
-                     ? "&tags=" + String(tags)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    start[0] != '\0' ? ",start=" + String(start) : "",
+    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
+    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
+    end[0] != '\0' ? ",end=" + String(start) : "",
+    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
+    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
+    tags[0] != '\0' ? "&tags=" + String(tags) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(SLEEP_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(SLEEP_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1726,18 +1657,18 @@ BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
 
 BabyApi::Sleep BabyApi::logSleep(
     uint16_t child,          // Required unless a Timer value is provided.
-    char * start = "", // Required unless a Timer value is provided.
-    char * end = "",   // Required unless a Timer value is provided.
-    uint16_t timer = -1,          // May be used in place of the Start, End, and/or Child values.
-    char * notes = "",
-    char * tags = "")
+    char * start = {}, // Required unless a Timer value is provided.
+    char * end = {},   // Required unless a Timer value is provided.
+    uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
+    char * notes = {},
+    char * tags = {})
 {
   Sleep outcome;
 
   doc.clear();
 
   // if no tmer value present, child start and end are required fields
-  if (timer == -1 && (child == -1 || start != '\0' || end != '\0'))
+  if (timer == 0 && (child == 0 || start != '\0' || end != '\0'))
   {
     Serial.println("Missing child, start and end, these are required if no timer id provided:");
     Serial.print("child: ");
@@ -1749,11 +1680,11 @@ BabyApi::Sleep BabyApi::logSleep(
     return outcome;
   }
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   doc["start"] = start;
   doc["end"] = end;
-  if (timer > -1)
+  if (timer > 0)
     doc["timer"] = timer;
   doc["notes"] = notes;
   doc["tags"] = serialiseTags(tags);
@@ -1803,19 +1734,19 @@ BabyApi::Sleep BabyApi::getSleep(uint16_t id)
 
 BabyApi::Sleep BabyApi::updateSleep(
     uint16_t id,
-    uint16_t child = -1,
-    char * start = "",
-    char * end = "",
+    uint16_t child = 0,
+    char * start = {},
+    char * end = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   Sleep outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (start != '\0')
     doc["start"] = start;
@@ -1860,30 +1791,24 @@ bool BabyApi::removeSleep(uint16_t id)
 }
 
 BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
-    uint16_t offset = -1,
-    char * name = "",
-    char * last_used = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    char * name = {},
+    char * last_used = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Tag> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (name != '\0')
-                     ? "&name=" + String(name)
-                 : "" +
-                         (last_used != '\0')
-                     ? "&last_used=" + String(last_used)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    name > 0 ? ",name=" + String(name) : "",
+    last_used[0] != '\0' ? ",last_used=" + String(last_used) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(TAGS_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(TAGS_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -1907,7 +1832,7 @@ BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
 
 BabyApi::Tag BabyApi::createTag(
     char * name,
-    char * colour = "")
+    char * colour = {})
 {
   BabyApi::Tag outcome;
 
@@ -1955,9 +1880,9 @@ BabyApi::Tag BabyApi::getTag(char * slug)
 BabyApi::Tag BabyApi::updateTag(
     char * slug,
     bool updateName = false,
-    char * name = "",
+    char * name = {},
     bool updateColour = false,
-    char * colour = "")
+    char * colour = {})
 {
   BabyApi::Tag outcome;
 
@@ -1998,42 +1923,30 @@ bool BabyApi::removeTag(char * slug)
 }
 
 BabyApi::searchResults<BabyApi::Temperature> BabyApi::findTemperatureRecords(
-    uint16_t offset = -1,
-    uint16_t child = -1,
-    char * date = "",
-    char * date_max = "",
-    char * date_min = "",
-    char * tags = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    uint16_t child = 0,
+    char * date = {},
+    char * date_max = {},
+    char * date_min = {},
+    char * tags = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Temperature> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > -1)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (date != '\0')
-                     ? "&date=" + String(date)
-                 : "" +
-                         (date_max != '\0')
-                     ? "&date_max=" + String(date_max)
-                 : "" +
-                         (date_min != '\0')
-                     ? "&date_min=" + String(date_min)
-                 : "" +
-                         (tags != '\0')
-                     ? "&tags=" + String(tags)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
+    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
+    tags[0] != '\0' ? "&tags=" + String(tags) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(TEMPERATURE_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(TEMPERATURE_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -2061,8 +1974,8 @@ BabyApi::Temperature BabyApi::logTemperature(
     uint16_t child,
     float temperature,
     char * time,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   BabyApi::Temperature outcome;
 
@@ -2118,17 +2031,17 @@ BabyApi::Temperature BabyApi::updateTemperature(
     uint16_t id = 0,
     uint16_t child = 0,
     float temperature = NAN,
-    char * time = "",
+    char * time = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::Temperature outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (time != '\0')
     doc["time"] = time;
@@ -2173,56 +2086,40 @@ bool BabyApi::removeTemperature(uint16_t id)
 BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * start = "",
-    char * start_max = "",
-    char * start_min = "",
-    char * end = "",
-    char * end_max = "",
-    char * end_min = "",
-    char * active = "",
+    const char * start = {},
+    const char * start_max = {},
+    const char * start_min = {},
+    const char * end = {},
+    const char * end_max = {},
+    const char * end_min = {},
+    const char * active = {},
     uint16_t user = 0,
-    char * ordering = "")
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Timer> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > 0)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > 0)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (start != '\0')
-                     ? "&start=" + String(start)
-                 : "" +
-                         (start_max != '\0')
-                     ? "&start_max=" + String(start_max)
-                 : "" +
-                         (start_min != '\0')
-                     ? "&date_min=" + String(start_min)
-                 : "" +
-                         (end != '\0')
-                     ? "&end=" + String(end)
-                 : "" +
-                         (end_max != '\0')
-                     ? "&end_max=" + String(end_max)
-                 : "" +
-                         (end_min != '\0')
-                     ? "&end_min=" + String(end_min)
-                 : "" +
-                         (active != '\0')
-                     ? "&active=" + String(active)
-                 : "" +
-                         (user > 0)
-                     ? "&user=" + String(user)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+
+                (active[0] != '\0' ? "&active=" + String(active) : "") +
+                (user > 0 ? "&user=" + String(user) : "") +
+
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    start[0] != '\0' ? ",start=" + String(start) : "",
+    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
+    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
+    end[0] != '\0' ? ",end=" + String(start) : "",
+    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
+    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
+    active[0] != '\0' ? "&active=" + String(active) : "",
+    user > 0 ? "&user=" + String(user) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -2246,11 +2143,11 @@ BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
   return outcome;
 }
 
-uint16_t BabyApi::startTimer(uint16_t childId, char * name = "", uint16_t timer = 0)
+uint16_t BabyApi::startTimer(uint16_t childId, String name = {}, uint16_t timer = 0)
 {
   BabyApi::Timer babyTimer;
 
-  if (timer == -1 && name[0] != '\0')
+  if (timer == 0 && name[0] != '\0')
   {
     // search for existing timer
     BabyApi::searchResults<BabyApi::Timer> results;
@@ -2268,10 +2165,10 @@ uint16_t BabyApi::startTimer(uint16_t childId, char * name = "", uint16_t timer 
           break;
         }
       }
-    } while (results.next > -1 && timer == -1);
+    } while (results.next > 0 && timer == 0);
   }
 
-  if (babyTimer.id > -1)
+  if (babyTimer.id > 0)
   {
     // attempt to restart it
     babyTimer = restartTimer(timer);
@@ -2367,8 +2264,8 @@ BabyApi::Timer BabyApi::getTimer(uint16_t id)
 BabyApi::Timer BabyApi::updateTimer(
     uint16_t id,
     uint16_t child = 0,
-    char * name = "",
-    char * start = "",
+    char * name = {},
+    char * start = {},
     uint16_t user = 0)
 {
   BabyApi::Timer outcome;
@@ -2464,54 +2361,36 @@ BabyApi::Timer BabyApi::stopTimer(uint16_t id)
 }
 
 BabyApi::searchResults<BabyApi::TummyTime> BabyApi::findTummyTimes(
-    uint16_t offset = -1,
-    uint16_t child = -1,
-    char * start = "",
-    char * start_max = "",
-    char * start_min = "",
-    char * end = "",
-    char * end_max = "",
-    char * end_min = "",
-    char * tags = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    uint16_t child = 0,
+    char * start = {},
+    char * start_max = {},
+    char * start_min = {},
+    char * end = {},
+    char * end_max = {},
+    char * end_min = {},
+    char * tags = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::TummyTime> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > -1)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (start != '\0')
-                     ? "&start=" + String(start)
-                 : "" +
-                         (start_max != '\0')
-                     ? "&start_max=" + String(start_max)
-                 : "" +
-                         (start_min != '\0')
-                     ? "&date_min=" + String(start_min)
-                 : "" +
-                         (end != '\0')
-                     ? "&end=" + String(end)
-                 : "" +
-                         (end_max != '\0')
-                     ? "&end_max=" + String(end_max)
-                 : "" +
-                         (end_min != '\0')
-                     ? "&end_min=" + String(end_min)
-                 : "" +
-                         (tags != '\0')
-                     ? "&tags=" + String(tags)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    start[0] != '\0' ? ",start=" + String(start) : "",
+    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
+    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
+    end[0] != '\0' ? ",end=" + String(start) : "",
+    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
+    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
+    tags[0] != '\0' ? "&tags=" + String(tags) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -2537,19 +2416,19 @@ BabyApi::searchResults<BabyApi::TummyTime> BabyApi::findTummyTimes(
 }
 
 BabyApi::TummyTime BabyApi::logTummyTime(
-    uint16_t child = -1,          // Required unless a Timer value is provided.
-    char * start = "", // Required unless a Timer value is provided.
-    char * end = "",   // Required unless a Timer value is provided.
-    uint16_t timer = -1,          // May be used in place of the Start, End, and/or Child values.
-    char * milestone = "",
-    char * tags = "")
+    uint16_t child = 0,          // Required unless a Timer value is provided.
+    char * start = {}, // Required unless a Timer value is provided.
+    char * end = {},   // Required unless a Timer value is provided.
+    uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
+    char * milestone = {},
+    char * tags = {})
 {
   BabyApi::TummyTime outcome;
 
   doc.clear();
 
   // if no tmer value present, child start and end are required fields
-  if (timer == -1 && (child == -1 || start != '\0' || end != '\0'))
+  if (timer == 0 && (child == 0 || start[0] != '\0' || end[0] != '\0'))
   {
     Serial.println("Missing child, start and end, these are required if no timer id provided:");
     Serial.print("child: ");
@@ -2561,11 +2440,11 @@ BabyApi::TummyTime BabyApi::logTummyTime(
     return outcome;
   }
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   doc["start"] = start;
   doc["end"] = end;
-  if (timer > -1)
+  if (timer > 0)
     doc["timer"] = timer;
   doc["milestone"] = milestone;
   doc["tags"] = serialiseTags(tags);
@@ -2614,19 +2493,19 @@ BabyApi::TummyTime BabyApi::getTummyTime(uint16_t id)
 
 BabyApi::TummyTime BabyApi::updateTummyTime(
     uint16_t id,
-    uint16_t child = -1,
-    char * start = "",
-    char * end = "",
+    uint16_t child = 0,
+    char * start = {},
+    char * end = {},
     bool updateMilestone = false,
-    char * milestone = "",
+    char * milestone = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::TummyTime outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (start != '\0')
     doc["start"] = start;
@@ -2670,30 +2549,24 @@ bool BabyApi::removeTummyTime(uint16_t id)
 }
 
 BabyApi::searchResults<BabyApi::Weight> BabyApi::findWeightRecords(
-    uint16_t offset = -1,
-    uint16_t child = -1,
-    char * date = "",
-    char * ordering = "")
+    uint16_t offset = 0,
+    uint16_t child = 0,
+    char * date = {},
+    char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Weight> outcome;
   uint16_t count = 0;
 
-  String query = "?limit=" + SEARCH_LIMIT +
-                         (offset > -1)
-                     ? "&offset=" + String(offset)
-                 : "" +
-                         (child > -1)
-                     ? "&child=" + String(child)
-                 : "" +
-                         (date != '\0')
-                     ? "&date=" + String(date)
-                 : "" +
-                         (ordering != '\0')
-                     ? "&ordering=" + String(ordering)
-                     : "";
+  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
+    SEARCH_LIMIT,
+    offset > 0 ? ",offset=" + String(offset) : "",
+    child > 0 ? ",child=" + String(child) : "",
+    date[0] != '\0' ? ",date=" + String(date) : "",
+    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
+  );
 
   String jsonBuffer;
-  jsonBuffer = httpRequest(WEIGHT_ENDPOINT, "GET", "", query.c_str());
+  jsonBuffer = httpRequest(WEIGHT_ENDPOINT, "GET", "", query);
   Serial.println(jsonBuffer);
 
   ResponseParser(jsonBuffer);
@@ -2721,8 +2594,8 @@ BabyApi::Weight BabyApi::logWeight(
     uint16_t child,
     float weight,
     char * date,
-    char * notes = "",
-    char * tags = "")
+    char * notes = {},
+    char * tags = {})
 {
   BabyApi::Weight outcome;
 
@@ -2776,19 +2649,19 @@ BabyApi::Weight BabyApi::getWeight(uint16_t id)
 
 BabyApi::Weight BabyApi::updateWeight(
     uint16_t id,
-    uint16_t child = -1,
+    uint16_t child = 0,
     float weight = NAN,
-    char * date = "",
+    char * date = {},
     bool updateNotes = false,
-    char * notes = "",
+    char * notes = {},
     bool updateTags = false,
-    char * tags = "")
+    char * tags = {})
 {
   BabyApi::Weight outcome;
 
   doc.clear();
 
-  if (child > -1)
+  if (child > 0)
     doc["child"] = child;
   if (date != '\0')
     doc["date"] = date;
@@ -2873,11 +2746,11 @@ uint8_t BabyApi::getAllChildren(BabyApi::Child *children, uint8_t count)
   return retrieved;
 }
 
-uint8_t BabyApi::recordFeeding(uint16_t timerId, char * feedingType, char * feedingMethod, float amount)
+uint8_t BabyApi::recordFeeding(uint16_t timerId, uint8_t feedingType, uint8_t feedingMethod, float amount)
 {
   BabyApi::Feeding fed;
 
-  fed = babyApi.logFeeding(timerId, feedingType, feedingMethod, amount); 
+  fed = babyApi.logFeeding(timerId, feedingTypes[feedingType], feedingMethods[feedingMethod], amount); 
   
   return fed.id;
 }

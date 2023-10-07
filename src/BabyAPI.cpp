@@ -49,8 +49,7 @@ void BabyApi::setServerPort(const char * server_port)
 }
 void BabyApi::setApiKey(const char * apiKey)
 {
-  strcpy(babyApiKey, "Token ");
-  strcat(babyApiKey, apiKey);
+  snprintf(babyApiKey,129, "Token %s", apiKey);
 }
 
 int BabyApi::httpRequest(
@@ -63,18 +62,11 @@ int BabyApi::httpRequest(
   WiFiClientSecure client;
   HTTPClient https;
 
-  char address[255] = "https://";
+  char address[256];
 
-  strcat(address, getServerHost());
-  strcat(address, ":");
-  strcat(address, getServerPort());
-  strcat(address, ENDPOINT);
-  strcat(address, endpoint);
-  strcat(address, "/");
-  strcat(address, parameters);
-  strcat(address, query);
+  snprintf(address, 256, "https://%s:%s%s%s/%s%s", getServerHost(), getServerPort(), ENDPOINT, endpoint, parameters, query);
 
-  https.addHeader("Authorization", babyApiKey);
+  https.addHeader("Authorization", getApiKey());
 
   https.begin(client, address);
 
@@ -305,12 +297,11 @@ BabyApi::BMI BabyApi::updateBMI(
   if (updateTags)
     doc["tags"] = serialiseTags(tags);
 
-  String parameters = "/" + String(id) + "/";
-
+  snprintf(parameters, 256,"/%d/",id);
 
   serializeJson(doc, requestBody);
 
-  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "PATCH", parameters, "", requestBody);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -332,9 +323,9 @@ BabyApi::BMI BabyApi::updateBMI(
 
 bool BabyApi::deleteBMI(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  int responseCode = httpRequest(BMI_ENDPOINT, "DELETE", parameters.c_str(), "", "");
+  int responseCode = httpRequest(BMI_ENDPOINT, "DELETE", parameters, "", "");
   Serial.println(responseCode);
 
   return responseCode == 204;
@@ -465,9 +456,9 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(uint16_t id)
 {
   BabyApi::DiaperChange outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "GET", parameters.c_str());
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "GET", parameters);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -523,11 +514,11 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
   if (updateTags)
     doc["tags"] = serialiseTags(tags);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
   serializeJson(doc, requestBody);
 
-  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "PATCH", parameters, "", requestBody);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -550,9 +541,9 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
 
 bool BabyApi::removeDiaperChange(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str());
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters);
   Serial.println(httpsResponseCode);
 
   return httpsResponseCode == 204;
@@ -644,9 +635,9 @@ BabyApi::Child BabyApi::getChild(char * slug)
 
   BabyApi::Child outcome;
 
-  String parameters = "/" + String(slug) + "/";
+  snprintf(parameters, 256,"/%s/",slug);
 
-  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "GET", parameters.c_str());
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "GET", parameters);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -688,9 +679,9 @@ BabyApi::Child BabyApi::updateChild(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(slug) + "/";
+  snprintf(parameters, 256,"/%s/",slug);
 
-  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "PATCH", parameters.c_str(), "", babyApi.requestBody);
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "PATCH", parameters, "", babyApi.requestBody);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -707,11 +698,12 @@ BabyApi::Child BabyApi::updateChild(
 
   return outcome;
 }
+
 bool BabyApi::removeChild(char *slug)
 {
-  String parameters = "/" + String(slug) + "/";
+  snprintf(parameters, 256,"/%s/",slug);
 
-  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "DELETE", parameters.c_str());
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "DELETE", parameters);
   Serial.println(httpsResponseCode);
 
   return httpsResponseCode == 204;
@@ -750,11 +742,13 @@ BabyApi::searchResults<BabyApi::Feeding> BabyApi::findFeedingRecords(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(FEEDINGS_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -863,11 +857,13 @@ BabyApi::Feeding BabyApi::logFeeding(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(FEEDINGS_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"].as<int>();
@@ -887,13 +883,15 @@ BabyApi::Feeding BabyApi::getFeeding(uint16_t id)
 {
   BabyApi::Feeding outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(FEEDINGS_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"].as<int>();
@@ -945,13 +943,15 @@ BabyApi::Feeding BabyApi::updateFeeding(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(FEEDINGS_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"].as<int>();
@@ -969,13 +969,12 @@ BabyApi::Feeding BabyApi::updateFeeding(
 
 bool BabyApi::removeFeeding(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenceRecords(
@@ -995,11 +994,13 @@ BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenc
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1039,11 +1040,13 @@ BabyApi::HeadCircumference BabyApi::logHeadCircumference(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1059,13 +1062,15 @@ BabyApi::HeadCircumference BabyApi::getHeadCircumference(uint16_t id)
 {
   BabyApi::HeadCircumference outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1104,13 +1109,15 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1124,13 +1131,12 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
 
 bool BabyApi::removeHeadCircumference(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
+  
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
 
-  return responseCode == 204;
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
@@ -1150,11 +1156,13 @@ BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEIGHT_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1194,11 +1202,13 @@ BabyApi::Height BabyApi::logHeight(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEIGHT_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1214,13 +1224,15 @@ BabyApi::Height BabyApi::getHeight(uint16_t id)
 {
   BabyApi::Height outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEIGHT_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1259,13 +1271,15 @@ BabyApi::Height BabyApi::updateHeight(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(HEIGHT_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1279,13 +1293,12 @@ BabyApi::Height BabyApi::updateHeight(
 
 bool BabyApi::removeHeight(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Note> BabyApi::findNotes(
@@ -1311,11 +1324,13 @@ BabyApi::searchResults<BabyApi::Note> BabyApi::findNotes(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(NOTES_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1352,11 +1367,13 @@ BabyApi::Note BabyApi::createNote(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(NOTES_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1371,13 +1388,15 @@ BabyApi::Note BabyApi::getNote(uint16_t id)
 {
   BabyApi::Note outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(NOTES_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1412,13 +1431,15 @@ BabyApi::Note BabyApi::updateNote(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(NOTES_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1431,13 +1452,12 @@ BabyApi::Note BabyApi::updateNote(
 
 bool BabyApi::removeNote(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
@@ -1461,11 +1481,13 @@ BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1505,11 +1527,13 @@ BabyApi::Pumping BabyApi::logPumping(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1525,13 +1549,15 @@ BabyApi::Pumping BabyApi::getPumping(uint16_t id)
 {
   BabyApi::Pumping outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1572,11 +1598,13 @@ BabyApi::Pumping BabyApi::updatePumping(
 
   snprintf(parameters, 256, "/%d/", id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(PUMPING_ENDPOINT, "PATCH", parameters, "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1590,13 +1618,12 @@ BabyApi::Pumping BabyApi::updatePumping(
 
 bool BabyApi::removePumping(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
@@ -1628,11 +1655,13 @@ BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(SLEEP_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1691,11 +1720,13 @@ BabyApi::Sleep BabyApi::logSleep(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(SLEEP_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1712,13 +1743,15 @@ BabyApi::Sleep BabyApi::getSleep(uint16_t id)
 {
   Sleep outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(SLEEP_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1759,13 +1792,15 @@ BabyApi::Sleep BabyApi::updateSleep(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(SLEEP_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -1781,13 +1816,12 @@ BabyApi::Sleep BabyApi::updateSleep(
 
 bool BabyApi::removeSleep(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
@@ -1807,11 +1841,13 @@ BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TAGS_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1843,11 +1879,13 @@ BabyApi::Tag BabyApi::createTag(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TAGS_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   response["name"].as<String>().toCharArray(outcome.name, 256);
   response["last_used"].as<String>().toCharArray(outcome.last_used, 33);
@@ -1861,13 +1899,15 @@ BabyApi::Tag BabyApi::getTag(char * slug)
 {
   BabyApi::Tag outcome;
 
-  String parameters = "/" + String(slug) + "/";
+  snprintf(parameters, 256,"/%s/",slug);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TAGS_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   response["name"].as<String>().toCharArray(outcome.name, 256);
   response["last_used"].as<String>().toCharArray(outcome.last_used, 33);
@@ -1895,13 +1935,15 @@ BabyApi::Tag BabyApi::updateTag(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(slug) + "/";
+  snprintf(parameters, 256,"/%s/",slug);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TAGS_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   response["name"].as<String>().toCharArray(outcome.name, 256);
   response["last_used"].as<String>().toCharArray(outcome.last_used, 33);
@@ -1913,13 +1955,12 @@ BabyApi::Tag BabyApi::updateTag(
 
 bool BabyApi::removeTag(char * slug)
 {
-  String parameters = "/" + String(slug) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%s/",slug);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Temperature> BabyApi::findTemperatureRecords(
@@ -1945,11 +1986,13 @@ BabyApi::searchResults<BabyApi::Temperature> BabyApi::findTemperatureRecords(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TEMPERATURE_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -1989,11 +2032,13 @@ BabyApi::Temperature BabyApi::logTemperature(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TEMPERATURE_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2009,13 +2054,15 @@ BabyApi::Temperature BabyApi::getTemperature(uint16_t id)
 {
   BabyApi::Temperature outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TEMPERATURE_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2054,13 +2101,15 @@ BabyApi::Temperature BabyApi::updateTemperature(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TEMPERATURE_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2074,34 +2123,29 @@ BabyApi::Temperature BabyApi::updateTemperature(
 
 bool BabyApi::removeTemperature(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
     uint16_t offset = 0,
     uint16_t child = 0,
-    const char * start = {},
-    const char * start_max = {},
-    const char * start_min = {},
-    const char * end = {},
-    const char * end_max = {},
-    const char * end_min = {},
-    const char * active = {},
+     char * start = {},
+     char * start_max = {},
+     char * start_min = {},
+     char * end = {},
+     char * end_max = {},
+     char * end_min = {},
+     char * active = {},
     uint16_t user = 0,
-    const char * ordering = {})
+     char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Timer> outcome;
   uint16_t count = 0;
-
-
-                (active[0] != '\0' ? "&active=" + String(active) : "") +
-                (user > 0 ? "&user=" + String(user) : "") +
 
   snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
     SEARCH_LIMIT,
@@ -2118,11 +2162,13 @@ BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -2143,7 +2189,7 @@ BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
   return outcome;
 }
 
-uint16_t BabyApi::startTimer(uint16_t childId, String name = {}, uint16_t timer = 0)
+uint16_t BabyApi::startTimer(uint16_t childId, char * name = {}, uint16_t timer = 0)
 {
   BabyApi::Timer babyTimer;
 
@@ -2223,11 +2269,13 @@ BabyApi::Timer BabyApi::createTimer(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2243,13 +2291,15 @@ BabyApi::Timer BabyApi::getTimer(uint16_t id)
 {
   BabyApi::Timer outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2283,13 +2333,15 @@ BabyApi::Timer BabyApi::updateTimer(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "GET", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2303,28 +2355,27 @@ BabyApi::Timer BabyApi::updateTimer(
 
 bool BabyApi::removeTimer(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::Timer BabyApi::restartTimer(uint16_t id)
 {
   BabyApi::Timer outcome;
 
-  
+  snprintf(parameters, 256,"/%d/",id);
 
-  String parameters = "/" + String(id) + "/";
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "PATCH", parameters);
+  Serial.println(httpsResponseCode);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "PATCH", parameters.c_str(), "");
-  Serial.println(jsonBuffer);
-
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2340,15 +2391,15 @@ BabyApi::Timer BabyApi::stopTimer(uint16_t id)
 {
   BabyApi::Timer outcome;
 
-  
+  snprintf(parameters, 256,"/%d/",id);
 
-  String parameters = "/" + String(id) + "/";
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "PATCH", parameters);
+  Serial.println(httpsResponseCode);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TIMERS_ENDPOINT, "PATCH", parameters.c_str(), "");
-  Serial.println(jsonBuffer);
-
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2389,11 +2440,13 @@ BabyApi::searchResults<BabyApi::TummyTime> BabyApi::findTummyTimes(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser( &outcome.count, &outcome.next, &outcome.previous);
 
@@ -2451,11 +2504,13 @@ BabyApi::TummyTime BabyApi::logTummyTime(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TUMMY_TIMES_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2472,13 +2527,15 @@ BabyApi::TummyTime BabyApi::getTummyTime(uint16_t id)
 {
   BabyApi::TummyTime outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2518,13 +2575,15 @@ BabyApi::TummyTime BabyApi::updateTummyTime(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(TUMMY_TIMES_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2539,13 +2598,12 @@ BabyApi::TummyTime BabyApi::updateTummyTime(
 
 bool BabyApi::removeTummyTime(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::searchResults<BabyApi::Weight> BabyApi::findWeightRecords(
@@ -2565,11 +2623,13 @@ BabyApi::searchResults<BabyApi::Weight> BabyApi::findWeightRecords(
     ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
   );
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(WEIGHT_ENDPOINT, "GET", "", query);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "GET", "", query);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   searchResultParser(&outcome.count, &outcome.next, &outcome.previous);
 
@@ -2609,11 +2669,13 @@ BabyApi::Weight BabyApi::logWeight(
 
   serializeJson(doc, requestBody);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(WEIGHT_ENDPOINT, "POST", "", "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "POST", "", "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2629,13 +2691,15 @@ BabyApi::Weight BabyApi::getWeight(uint16_t id)
 {
   BabyApi::Weight outcome;
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(WEIGHT_ENDPOINT, "GET", parameters.c_str());
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "GET", parameters);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2674,13 +2738,15 @@ BabyApi::Weight BabyApi::updateWeight(
 
   serializeJson(doc, requestBody);
 
-  String parameters = "/" + String(id) + "/";
+  snprintf(parameters, 256,"/%d/",id);
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(WEIGHT_ENDPOINT, "PATCH", parameters.c_str(), "", requestBody);
-  Serial.println(jsonBuffer);
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "PATCH", parameters, "", requestBody);
+  Serial.println(httpsResponseCode);
 
-  ResponseParser(jsonBuffer);
+  if(httpsResponseCode <= 0)
+  {
+    return outcome;
+  }
 
   outcome.id = response["id"];
   outcome.child = response["child"];
@@ -2694,13 +2760,12 @@ BabyApi::Weight BabyApi::updateWeight(
 
 bool BabyApi::removeWeight(uint16_t id)
 {
-  String parameters = "/" + String(id) + "/";
-  int responseCode;
-  String jsonBuffer;
-  jsonBuffer = httpRequest(CHANGES_ENDPOINT, "DELETE", parameters.c_str(), "", "", &responseCode);
-  Serial.println(jsonBuffer);
+  snprintf(parameters, 256,"/%d/",id);
 
-  return responseCode == 204;
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "DELETE", parameters);
+  Serial.println(httpsResponseCode);
+
+  return httpsResponseCode == 204;
 }
 
 BabyApi::Profile BabyApi::getProfile()
@@ -2749,8 +2814,12 @@ uint8_t BabyApi::getAllChildren(BabyApi::Child *children, uint8_t count)
 uint8_t BabyApi::recordFeeding(uint16_t timerId, uint8_t feedingType, uint8_t feedingMethod, float amount)
 {
   BabyApi::Feeding fed;
+  char buffer1[15],buffer2[15];
 
-  fed = babyApi.logFeeding(timerId, feedingTypes[feedingType], feedingMethods[feedingMethod], amount); 
+  strcpy(buffer1,feedingTypes[feedingType]);
+  strcpy(buffer2,feedingMethods[feedingMethod]);
+
+  fed = babyApi.logFeeding(timerId, buffer1, buffer2, amount); 
   
   return fed.id;
 }
@@ -2793,8 +2862,11 @@ uint8_t BabyApi::recordTummyTime(uint16_t timerId)
 uint8_t BabyApi::recordNappyChange(uint16_t child, bool wet, bool solid, uint16_t colour)
 {
   BabyApi::DiaperChange changed;
+  char buffer[15];
 
-  changed = babyApi.logDiaperChange(child,wet,solid,stoolColours[colour]);
+  strcpy(buffer,stoolColours[colour]);
+
+  changed = babyApi.logDiaperChange(child,wet,solid,buffer);
 
   return changed.id;
 }

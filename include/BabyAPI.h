@@ -5,6 +5,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include <cmath>
+#include <cstring>
 #include <ezTime.h>
 
 #define DEFAULT_SERVER_HOST "192.168.1.1"
@@ -27,7 +28,11 @@
 #define WEIGHT_ENDPOINT "weight/"
 #define PROFILE_ENDPOINT "profile"
 
+#define BB_DATE_FORMAT "DATE FORMAT HERE"
+
 #define JOSN_CAPACITY 1024 // close to wose case scenario. shold be sufficent to retrive a least 5 records wiht a search and everythign else should be smaller
+
+#define MAX_TAGS 10
 
 #define SEARCH_LIMIT 5
 
@@ -51,37 +56,39 @@ public:
         "yellow"
     };
 
+
+
     struct BMI
     {
         uint16_t id;
         uint16_t child;
         float bmi;
-        char date[33];
-        char notes[256];
-        char tags[256];
+        tmElements_t date;
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct DiaperChange
     {
         uint16_t id;
         uint16_t child;
-        char time[27];
+        tmElements_t time;
         bool wet;
         bool solid;
-        char color[8];
+        const char * color;
         float amount;
-        char notes[256];
-        char tags[256];
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct Child
     {
         uint16_t id;
-        char first_name[256];
-        char last_name[256];
-        char birth_date[11];
-        char slug[101];
-        char picture[];
+        const char * first_name;
+        const char * last_name;
+        tmElements_t birth_date;
+        const char * slug;
+        const char * picture;
     };
 
     const char *feedingTypes[5] =
@@ -106,15 +113,15 @@ public:
     {
         uint16_t id;
         uint16_t child;    // Required unless a Timer value is provided.
-        char start[33]; // Required unless a Timer value is provided.
-        char end[33];   // Required unless a Timer value is provided.
+        tmElements_t start; // Required unless a Timer value is provided.
+        tmElements_t end;   // Required unless a Timer value is provided.
         uint16_t timer;    // May be used in place of the Start, End, and/or Child values.
-        char duration[256];
-        char type[22];
-        char method[13];
+        tmElements_t duration;
+        const char * type;
+        const char * method;
         float amount;
-        char notes[256];
-        char tags[256];
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct HeadCircumference
@@ -122,9 +129,9 @@ public:
         uint16_t id;
         uint16_t child;
         float head_circumference;
-        char date[33];
-        char notes[256];
-        char tags[256];
+        tmElements_t date;
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct Height
@@ -132,18 +139,18 @@ public:
         uint16_t id;
         uint16_t child;
         float height;
-        char date[33];
-        char notes[256];
-        char tags[256];
+        tmElements_t date;
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct Note
     {
         uint16_t id;
         uint16_t child;
-        char note[256];
-        char date[33];
-        char tags[256];
+        tmElements_t date;
+        const char * note;
+        const char * tags[MAX_TAGS];
     };
 
     struct Pumping
@@ -151,30 +158,30 @@ public:
         uint16_t id;
         uint16_t child;
         float amount;
-        char time[33];
-        char notes[256];
-        char tags[256];
+        tmElements_t time;
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct Sleep
     {
         uint16_t id;
         uint16_t child;    // Required unless a Timer value is provided.
-        char start[33]; // Required unless a Timer value is provided.
-        char end[33];   // Required unless a Timer value is provided.
+        tmElements_t start; // Required unless a Timer value is provided.
+        tmElements_t end;   // Required unless a Timer value is provided.
         uint16_t timer;    // May be used in place of the Start, End, and/or Child values.
-        char duration[17];
+        tmElements_t duration;
         bool nap;
-        char notes[256];
-        char tags[256];
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct Tag
     {
-        char slug[101];
-        char name[256];
-        char color[8];
-        char last_used[33];
+        const char * slug;
+        const char * name;
+        const char * color;
+        const char * last_used;
     };
 
     struct Temperature
@@ -182,19 +189,19 @@ public:
         uint16_t id;
         uint16_t child;
         float temperature;
-        char time[33];
-        char notes[256];
-        char tags[256];
+        tmElements_t time;
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct Timer
     {
         uint16_t id; // read only
         uint16_t child;
-        char name[256];
-        char start[33];
-        char end[33];      // read only
-        char duration[17]; // read only
+        const char * name;
+        tmElements_t start;
+        tmElements_t end;      // read only
+        tmElements_t duration; // read only
         bool active;     // read only
         uint16_t user;
     };
@@ -203,12 +210,12 @@ public:
     {
         uint16_t id;
         uint16_t child;    // Required unless a Timer value is provided.
-        char start[33]; // Required unless a Timer value is provided.
-        char end[33];   // Required unless a Timer value is provided.
+        tmElements_t start; // Required unless a Timer value is provided.
+        tmElements_t end;   // Required unless a Timer value is provided.
         uint16_t timer;    // May be used in place of the Start, End, and/or Child values.
-        char duration[17];
-        char milestone[256];
-        char tags[256];
+        tmElements_t duration;
+        const char * milestone;
+        const char * tags[MAX_TAGS];
     };
 
     struct Weight
@@ -216,27 +223,27 @@ public:
         uint16_t id;
         uint16_t child;
         float weight;
-        char date[33];
-        char notes[256];
-        char tags[256];
+        tmElements_t date;
+        const char * notes;
+        const char * tags[MAX_TAGS];
     };
 
     struct User
     {
         uint16_t id;
-        char username[151];
-        char first_name[151];
-        char last_name[151];
-        char email[151];
+        const char * username;
+        const char * first_name;
+        const char * last_name;
+        const char * email;
         bool is_staff;
     };
 
     struct Profile
     {
         User user;
-        char language[256];
-        char timezone[101];
-        char api_key[129];
+        const char * language;
+        const char * timezone;
+        const char * api_key;
     };
 
     template <typename T>
@@ -254,12 +261,12 @@ public:
         const char *type,
         const char *parameters = {},
         const char *query = {},
-        const char * requestBody = {});
+        bool includeRequest = false);
 
     searchResults<BMI> findBMIRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-        const char * date = {},
+        time_t date = {},
         const char * ordering = {});
 
     BMI getBMI(uint16_t id);
@@ -267,178 +274,178 @@ public:
     BMI logBMI(
         uint16_t child,
         float bmi,
-        char * date,
-        char * notes = {},
-        char * tags = {});
+        time_t date,
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     BMI updateBMI(
         uint16_t id,
         uint16_t child = 0,
         float bmi = NAN,
-         char * date = {},
+        time_t date = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool deleteBMI(uint16_t id);
 
     searchResults<DiaperChange> findDiaperChanges(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * colour = {},
-         char * date = {},
-         char * date_max = {},
-         char * date_min = {},
-         char * solid = {},
-         char * wet = {},
-         char * tags = {},
-         char * ordering = {});
+        const char * colour = {},
+        time_t date = {},
+        time_t date_max = {},
+        time_t date_min = {},
+        bool solid = {},
+        bool wet = {},
+        const char * tags[MAX_TAGS] = {},
+        const char * ordering = {});
 
     BabyApi::DiaperChange BabyApi::logDiaperChange(
         uint16_t child,
         bool wet,
         bool solid,
-         char * color = {},
+        const char * color = {},
         float amount = NAN,
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     DiaperChange logDiaperChange(
         uint16_t child,
-         char * time,
+        time_t time,
         bool wet = false,
         bool solid = false,
-         char * color = {},
+        const char * color = {},
         float amount = NAN,
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     DiaperChange getDiaperChange(uint16_t id);
 
     DiaperChange updateDiaperChange(
         uint16_t id,
         uint16_t child = 0,
-         char * time = {},
-         char * wet = {},
-         char * solid = {},
-         char * color = {},
+        time_t time = {},
+        bool wet = {},
+        bool solid = {},
+        const char * color = {},
         float amount = NAN,
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeDiaperChange(uint16_t id);
 
     searchResults<Child> findChildren(
         uint16_t offset = 0,
-         char * first_name = {},
-         char * last_name = {},
-         char * birth_date = {},
-         char * slug = {},
-         char * ordering = {});
+        const char * first_name = {},
+        const char * last_name = {},
+        time_t birth_date = {},
+        const char * slug = {},
+        const char * ordering = {});
 
     Child newChild(
-         char * first_name,
-         char * last_name,
-         char * birth_date,
-         char * picture);
+        const char * first_name,
+        const char * last_name,
+        time_t birth_date,
+        const char * picture);
 
-    Child getChild( char * slug);
+    Child getChild(const char * slug);
 
     Child updateChild(
-         char * slug,
-         char * first_name = {},
-         char * last_name = {},
-         char * birth_date = {},
+        const char * slug,
+        const char * first_name = {},
+        const char * last_name = {},
+        time_t birth_date = {},
         bool updatePicture = false,
-         char * picture = {});
+        const char * picture = {});
 
-    bool removeChild( char * slug);
+    bool removeChild(const char * slug);
 
     searchResults<Feeding> findFeedingRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * start = {},
-         char * start_max = {},
-         char * start_min = {},
-         char * end = {},
-         char * end_max = {},
-         char * end_min = {},
-         char * type = {},
-         char * method = {},
-         char * tags = {},
-         char * ordering = {});
+        time_t start = {},
+        time_t start_max = {},
+        time_t start_min = {},
+        time_t end = {},
+        time_t end_max = {},
+        time_t end_min = {},
+        const char * type = {},
+        const char * method = {},
+        const char * tags[MAX_TAGS] = {},
+        const char * ordering = {});
 
     Feeding logFeeding(
         uint16_t child,    // Required unless a Timer value is provided.
-         char * start, // Required unless a Timer value is provided.
-         char * end,   // Required unless a Timer value is provided.
-         char * type,
-         char * method,
+        time_t start, // Required unless a Timer value is provided.
+        time_t end,   // Required unless a Timer value is provided.
+        const char * type,
+        const char * method,
         float amount = NAN,
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Feeding logFeeding(
         uint16_t timer,
-         char * type,
-         char * method,
+        const char * type,
+        const char * method,
         float amount = NAN,
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Feeding logFeeding(
         uint16_t child = 0,          // Required unless a Timer value is provided.
-         char * start = {}, // Required unless a Timer value is provided.
-         char * end = {},   // Required unless a Timer value is provided.
-         char * type = {},
-         char * method = {},
+        time_t start = {}, // Required unless a Timer value is provided.
+        time_t end = {},   // Required unless a Timer value is provided.
+        const char * type = {},
+        const char * method = {},
         float amount = NAN,
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Feeding logFeeding(
         uint16_t child = 0,          // Required unless a Timer value is provided.
-         char * start = {}, // Required unless a Timer value is provided.
-         char * end = {},   // Required unless a Timer value is provided.
+        time_t start = {}, // Required unless a Timer value is provided.
+        time_t end = {},   // Required unless a Timer value is provided.
         uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
-         char * type = {},
-         char * method = {},
+        const char * type = {},
+        const char * method = {},
         float amount = NAN,
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Feeding getFeeding(uint16_t id);
 
     Feeding updateFeeding(
         uint16_t id = 0,
         uint16_t child = 0,          // Required unless a Timer value is provided.
-         char * start = {}, // Required unless a Timer value is provided.
-         char * end = {},   // Required unless a Timer value is provided.
-         char * method = {},
-         char * type = {},
+        time_t start = {}, // Required unless a Timer value is provided.
+        time_t end = {},   // Required unless a Timer value is provided.
+        const char * method = {},
+        const char * type = {},
         float amount = NAN,
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeFeeding(uint16_t id);
 
     searchResults<HeadCircumference> findHeadCircumferenceRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * date = {},
-         char * ordering = {});
+        time_t date = {},
+        const char * ordering = {});
 
     HeadCircumference logHeadCircumference(
         uint16_t child,
         float head_circumference,
-         char * date,
-         char * notes = {},
-         char * tags = {});
+        time_t date,
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     HeadCircumference getHeadCircumference(uint16_t id);
 
@@ -446,26 +453,26 @@ public:
         uint16_t id,
         uint16_t child = 0,
         float head_circumference = NAN,
-         char * date = {},
+        time_t date = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeHeadCircumference(uint16_t id);
 
     searchResults<Height> findHeightRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * date = {},
-         char * ordering = {});
+        time_t date = {},
+        const char * ordering = {});
 
     Height logHeight(
         uint16_t child,
         float height,
-         char * date,
-         char * notes = {},
-         char * tags = {});
+        time_t date,
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Height getHeight(uint16_t id);
 
@@ -473,56 +480,56 @@ public:
         uint16_t id,
         uint16_t child = 0,
         float height = NAN,
-         char * date = {},
+        time_t date = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeHeight(uint16_t id);
 
     searchResults<Note> findNotes(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * date = {},
-         char * date_max = {},
-         char * date_min = {},
-         char * tags = {},
-         char * ordering = {});
+        time_t date = {},
+        time_t date_max = {},
+        time_t date_min = {},
+        const char * tags[MAX_TAGS] = {},
+        const char * ordering = {});
 
     Note createNote(
         uint16_t child,
-         char * note,
-         char * date,
-         char * tags = {});
+        const char * note,
+        time_t date,
+        const char * tags[MAX_TAGS] = {});
 
     Note getNote(uint16_t id);
 
     Note updateNote(
         uint16_t id,
         uint16_t child = 0,
-         char * date = {},
+        time_t date = {},
         bool updateNote = false,
-         char * note = {},
+        const char * note = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeNote(uint16_t id);
 
     searchResults<Pumping> findPumpingRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * date = {},
-         char * date_max = {},
-         char * date_min = {},
-         char * ordering = {});
+        time_t date = {},
+        time_t date_max = {},
+        time_t date_min = {},
+        const char * ordering = {});
 
     Pumping logPumping(
         uint16_t child,
         float amount,
-         char * time = {},
-         char * notes = {},
-         char * tags = {});
+        time_t time = {},
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Pumping getPumping(uint16_t id);
 
@@ -530,97 +537,85 @@ public:
         uint16_t id,
         uint16_t child = 0,
         float amount = NAN,
-         char * time = {},
+        time_t time = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removePumping(uint16_t id);
 
     searchResults<Sleep> findSleepRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * start = {},
-         char * start_max = {},
-         char * start_min = {},
-         char * end = {},
-         char * end_max = {},
-         char * end_min = {},
-         char * tags = {},
-         char * ordering = {});
-
-    Sleep logSleep(
-        uint16_t child,
-         char * start,
-         char * end,
-         char * notes = {},
-         char * tags = {});
-
-    Sleep logSleep(
-        uint16_t timer,
-         char * notes = {},
-         char * tags = {});
+        time_t start = {},
+        time_t start_max = {},
+        time_t start_min = {},
+        time_t end = {},
+        time_t end_max = {},
+        time_t end_min = {},
+        const char * tags[MAX_TAGS] = {},
+        const char * ordering = {});
 
     Sleep logSleep(
         uint16_t child = 0,          // Required unless a Timer value is provided.
-         char * start = {}, // Required unless a Timer value is provided.
-         char * end = {},   // Required unless a Timer value is provided.
+        time_t start = {}, // Required unless a Timer value is provided.
+        time_t end = {},   // Required unless a Timer value is provided.
         uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
-         char * notes = {},
-         char * tags = {});
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Sleep getSleep(uint16_t id);
 
     Sleep updateSleep(
         uint16_t id,
         uint16_t child = 0,
-         char * start = {},
-         char * end = {},
+        time_t start = {},
+        time_t end = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeSleep(uint16_t id);
 
     searchResults<Tag> findAllTags(
         uint16_t offset = 0,
-         char * name = {},
-         char * last_used = {},
-         char * ordering = {});
+        const char * name = {},
+        time_t last_used = {},
+        const char * ordering = {});
 
     Tag createTag(
-         char * name,
-         char * colour = {});
+        const char * name,
+        const char * colour = {});
 
     Tag getTag(
-         char * slug);
+        const char * slug);
 
     Tag updateTag(
-         char * slug,
+        const char * slug,
         bool updateName = false,
-         char * name = {},
+        const char * name = {},
         bool updateColour = false,
-         char * colour = {});
+        const char * colour = {});
 
-    bool removeTag( char * slug);
+    bool removeTag(const char * slug);
 
     searchResults<Temperature> findTemperatureRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * date = {},
-         char * date_max = {},
-         char * date_min = {},
-         char * tags = {},
-         char * ordering = {});
+        time_t date = {},
+        time_t date_max = {},
+        time_t date_min = {},
+        const char * tags[MAX_TAGS] = {},
+        const char * ordering = {});
 
     Temperature logTemperature(
         uint16_t child,
         float temperature,
-         char * time,
-         char * notes = {},
-         char * tags = {});
+        time_t time,
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Temperature getTemperature(uint16_t id);
 
@@ -628,50 +623,57 @@ public:
         uint16_t id = 0,
         uint16_t child = 0,
         float temperature = NAN,
-         char * time = {},
+        time_t time = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeTemperature(uint16_t id);
+
+    enum TimerState
+    {
+      UNKNOWN,
+      INACTIVE,
+      ACTIVE
+    };
 
     searchResults<Timer> findTimers(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * start = {},
-         char * start_max = {},
-         char * start_min = {},
-         char * end = {},
-         char * end_max = {},
-         char * end_min = {},
-         char * active = {},
+        time_t start = {},
+        time_t start_max = {},
+        time_t start_min = {},
+        time_t end = {},
+        time_t end_max = {},
+        time_t end_min = {},
+        TimerState active = {},
         uint16_t user = 0,
-         char * ordering = {});
+        const char * ordering = {});
 
     Timer createTimer(
         uint16_t child);
 
     Timer createTimer(
         uint16_t child,
-         char * name);
+        const char * name);
 
     Timer createTimer(
         uint16_t child,
-         char * start);
+        time_t start);
 
     Timer createTimer(
         uint16_t child,
-         char * name,
-         char * start);
+        const char * name,
+        time_t start);
 
     Timer getTimer(uint16_t id);
 
     Timer updateTimer(
         uint16_t id,
         uint16_t child = 0,
-         char * name = {},
-         char * start = {},
+        const char * name = {},
+        time_t start = {},
         uint16_t user = 0);
 
     bool removeTimer(uint16_t id);
@@ -683,62 +685,62 @@ public:
     searchResults<TummyTime> findTummyTimes(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * start = {},
-         char * start_max = {},
-         char * start_min = {},
-         char * end = {},
-         char * end_max = {},
-         char * end_min = {},
-         char * tags = {},
-         char * ordering = {});
+        time_t start = {},
+        time_t start_max = {},
+        time_t start_min = {},
+        time_t end = {},
+        time_t end_max = {},
+        time_t end_min = {},
+        const char * tags[MAX_TAGS] = {},
+        const char * ordering = {});
 
     TummyTime logTummyTime(
         uint16_t child,    // Required unless a Timer value is provided.
-         char * start, // Required unless a Timer value is provided.
-         char * end,   // Required unless a Timer value is provided.
-         char * milestone = {},
-         char * tags = {});
+        time_t start, // Required unless a Timer value is provided.
+        time_t end,   // Required unless a Timer value is provided.
+        const char * milestone = {},
+        const char * tags[MAX_TAGS] = {});
 
     TummyTime logTummyTime(
 
         uint16_t timer, // May be used in place of the Start, End, and/or Child values.
          char * milestone = {},
-         char * tags = {});
+         char * tags[MAX_TAGS] = {});
 
     TummyTime logTummyTime(
         uint16_t child = 0,          // Required unless a Timer value is provided.
-         char * start = {}, // Required unless a Timer value is provided.
-         char * end = {},   // Required unless a Timer value is provided.
+        time_t start = {}, // Required unless a Timer value is provided.
+        time_t end = {},   // Required unless a Timer value is provided.
         uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
-         char * milestone = {},
-         char * tags = {});
+        const char * milestone = {},
+        const char * tags[MAX_TAGS] = {});
 
     TummyTime getTummyTime(uint16_t id);
 
     TummyTime updateTummyTime(
         uint16_t id,
         uint16_t child = 0,
-         char * start = {},
-         char * end = {},
+        time_t start = {},
+        time_t end = {},
         bool updateMilestone = false,
-         char * milestone = {},
+        const char * milestone = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeTummyTime(uint16_t id);
 
     searchResults<Weight> findWeightRecords(
         uint16_t offset = 0,
         uint16_t child = 0,
-         char * date = {},
-         char * ordering = {});
+        time_t date = {},
+        const char * ordering = {});
 
     Weight logWeight(
         uint16_t child,
         float weight,
-         char * date,
-         char * notes = {},
-         char * tags = {});
+        time_t date,
+        const char * notes = {},
+        const char * tags[MAX_TAGS] = {});
 
     Weight getWeight(uint16_t id);
 
@@ -746,11 +748,11 @@ public:
         uint16_t id,
         uint16_t child = 0,
         float weight = NAN,
-         char * date = {},
+        time_t date = {},
         bool updateNotes = false,
-         char * notes = {},
+        const char * notes = {},
         bool updateTags = false,
-         char * tags = {});
+        const char * tags[MAX_TAGS] = {});
 
     bool removeWeight(uint16_t id);
 
@@ -764,7 +766,7 @@ public:
     void setServerPort(const char * server_port);
     void setApiKey(const char * apiKey);
 
-    uint16_t startTimer(uint16_t childId, char * name = {}, uint16_t timer = 0);
+    uint16_t startTimer(uint16_t childId, const char * name = {}, uint16_t timer = 0);
 
     void searchResultParser(long *count, long *next, long *previous);
 
@@ -793,7 +795,7 @@ protected:
     StaticJsonDocument<JOSN_CAPACITY> doc;
     StaticJsonDocument<JOSN_CAPACITY> response;
 
-    void ResponseParser(String parse);
+    void ResponseParser(const char * parse);
 };
 
 extern BabyApi babyApi;

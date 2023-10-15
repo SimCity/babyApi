@@ -1,6 +1,16 @@
 
 #include "BabyAPI.h"
 
+#include <sstream>
+
+bool convertToJson(const tmElements_t& src, JsonVariant dst) {
+  return dst.set(dateTime(makeTime(src.Hour,src.Minute,src.Second,src.Day,src.Month,src.Year),BB_DATE_FORMAT));
+}
+
+void convertFromJson(JsonVariantConst src, tm& dst) {
+  strptime(src.as<const char*>(), BB_DATE_FORMAT, &dst);
+}
+
 
 BabyApi::BabyApi(const char * baby_api_key)
 {
@@ -57,12 +67,21 @@ int BabyApi::httpRequest(
   const char * type, 
   const char * parameters = {}, 
   const char * query = {}, 
-  const char * requestBody = {})
+  bool includeRequest = false)
 {
   WiFiClientSecure client;
   HTTPClient https;
 
   char address[256];
+
+  if(includeRequest)
+  {
+    serializeJson(doc, requestBody);
+  }
+  else
+  {
+    requestBody[0] = '\0';
+  }
 
   snprintf(address, 256, "https://%s:%s%s%s/%s%s", getServerHost(), getServerPort(), ENDPOINT, endpoint, parameters, query);
 
@@ -77,7 +96,7 @@ int BabyApi::httpRequest(
   {
     Serial.print("HTTP Response code: ");
     Serial.println(httpsResponseCode);
-    ResponseParser(https.getString());
+    ResponseParser(https.getString().c_str());
   }
   else
   {
@@ -90,7 +109,7 @@ int BabyApi::httpRequest(
   return httpsResponseCode;
 }
 
-void BabyApi::ResponseParser(String parse)
+void BabyApi::ResponseParser(const char * parse)
 {
   
   DeserializationError err = deserializeJson(response, parse);
@@ -101,87 +120,39 @@ void BabyApi::ResponseParser(String parse)
   }
 }
 
-
-JsonArray serialiseTags(char * tags)
-{
-  JsonArray tagsArray;
-
-  char * tag;
-  char * savePtr;
-
-  if(tags[0] != '\0')
-  {
-    tag = strtok_r(tags, ",", &savePtr); 
-
-    if(tag == NULL)
-    {
-      tagsArray.add(tags);
-    }
-
-    while (tag != NULL)
-    {
-      tagsArray.add(tag);
-
-      tag = strtok_r(NULL, ",", &savePtr); 
-    }
-  }
-
-  return tagsArray;
-}
-
-String deserialiseTags(JsonArray tags)
-{
-  String tagList = "";
-
-  for (JsonPair tagRecord : tags)
-  {
-    if (tagList.length() == 0)
-    {
-      tagList = tagRecord.value().as<String>();
-    }
-    else
-    {
-      tagList += "," + tagRecord.value().as<String>();
-    }
-  }
-
-  return tagList;
-}
-
 void BabyApi::searchResultParser(long *count, long *next, long *previous)
 {
-  int offsetLocation;
+  char * offsetLocation;
+
 
   *count = response["count"];
 
-  offsetLocation = response["next"].as<String>().indexOf("offset=");
+  offsetLocation = strstr(response["next"],"offset=");
 
-  *next = (offsetLocation > 0) ? response["next"].as<String>().substring(offsetLocation + 7).toInt() : 0;
+  *next = (offsetLocation != NULL) ? strtol(response["next"][offsetLocation + 7],NULL,0) : 0;
 
-  offsetLocation = response["previous"].as<String>().indexOf("offset=");
+  offsetLocation = strstr(response["previous"],"offset=");
 
-  *previous = (offsetLocation > 0) ? response["previous"].as<String>().substring(offsetLocation + 7).toInt() : 0;
+  *next = (offsetLocation != NULL) ? strtol(response["previous"][offsetLocation + 7],NULL,0) : 0;
 }
 
 BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    const char * date = {},
+    time_t date = 0,
     const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::BMI> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
     
-  snprintf(query,256,"limit=%d%s%s%s%s",
-    SEARCH_LIMIT,
-    (offset > 0) ? ",offset=" + String(offset) : "",
-    (child > 0) ? ",child=" + String(child) : "",
-    (date[0] != '\0') ? ",date=" + String(date) : "",
-    (ordering[0] != '\0') ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+  if(offset > 0) stream << ",offset=%d" << offset;
+  if(child > 0) stream << ",child=" << child;
+  if(date > 0 ) stream << ",date=" << dateTime(date,BB_DATE_FORMAT);
+  if(ordering[0] != '\0') stream << ",ordering=" << ordering;
 
-
-  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "GET", "", query);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "GET", "", stream.str().c_str());
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -197,11 +168,11 @@ BabyApi::searchResults<BabyApi::BMI> BabyApi::findBMIRecords(
   {
     outcome.results[count].id = bmiRecord["id"];
     outcome.results[count].child = bmiRecord["child"];
-    bmiRecord["date"].as<String>().toCharArray(outcome.results[count].date,26);
+    outcome.results[count].date = bmiRecord["date"];
     outcome.results[count].bmi = bmiRecord["bmi"];
-    bmiRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(bmiRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
-
+    outcome.results[count].notes = bmiRecord["notes"];
+    copyArray(bmiRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
+ 
     count++;
   }
 
@@ -224,10 +195,10 @@ BabyApi::BMI BabyApi::getBMI(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.bmi = response["bmi"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -236,9 +207,9 @@ BabyApi::BMI BabyApi::getBMI(uint16_t id)
 BabyApi::BMI BabyApi::logBMI(
     uint16_t child,
     float bmi,
-    char * date,
-    char * notes = {},
-    char * tags = {})
+    time_t date,
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   
   BabyApi::BMI outcome;
@@ -246,14 +217,12 @@ BabyApi::BMI BabyApi::logBMI(
   doc.clear();
 
   doc["child"] = child;
-  doc["date"] = date;
+  doc["date"] = dateTime(date, BB_DATE_FORMAT);
   doc["bmi"] = bmi;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
-  
-  serializeJson(doc, requestBody);
+  copyArray(tags, doc["tags"]);
 
-  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -263,10 +232,10 @@ BabyApi::BMI BabyApi::logBMI(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.bmi = response["bmi"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(), outcome.tags);
 
   return outcome;
 }
@@ -275,11 +244,11 @@ BabyApi::BMI BabyApi::updateBMI(
     uint16_t id,
     uint16_t child = 0,
     float bmi = NAN,
-    char * date = {},
+    time_t date = 0,
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   
   BabyApi::BMI outcome;
@@ -288,20 +257,18 @@ BabyApi::BMI BabyApi::updateBMI(
 
   if (child > 0)
     doc["child"] = child;
-  if (date != '\0')
-    doc["date"] = date;
+  if (date > 0)
+    doc["date"] = dateTime(date, BB_DATE_FORMAT);
   if (!isnan(bmi))
     doc["bmi"] = bmi;
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
   snprintf(parameters, 256,"/%d/",id);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(BMI_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -309,14 +276,12 @@ BabyApi::BMI BabyApi::updateBMI(
     return outcome;
   }
 
-  JsonArray results = response["results"].as<JsonArray>();
-
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.bmi = response["bmi"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(), outcome.tags);
 
   return outcome;
 }
@@ -325,7 +290,7 @@ bool BabyApi::deleteBMI(uint16_t id)
 {
   snprintf(parameters, 256,"/%d/",id);
 
-  int responseCode = httpRequest(BMI_ENDPOINT, "DELETE", parameters, "", "");
+  int responseCode = httpRequest(BMI_ENDPOINT, "DELETE", parameters);
   Serial.println(responseCode);
 
   return responseCode == 204;
@@ -334,33 +299,43 @@ bool BabyApi::deleteBMI(uint16_t id)
 BabyApi::searchResults<BabyApi::DiaperChange> BabyApi::findDiaperChanges(
     uint16_t offset = 0,
     uint16_t child = 0,
-     char * colour = {},
-     char * date = {},
-     char * date_max = {},
-     char * date_min = {},
-     char * solid = {},
-     char * wet = {},
-     char * tags = {},
-     char * ordering = {})
+    const char * colour = {},
+    time_t date = {},
+    time_t date_max = {},
+    time_t date_min = {},
+    bool solid = {},
+    bool wet = {},
+    const char * tags[MAX_TAGS] = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::DiaperChange> outcome;
   uint16_t count = 0;
   
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
-    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
-    colour[0] != '\0' ? "&colour=" + String(colour) : "",
-    solid[0] != '\0' ? "&solid=" + String(solid) : "",
-    wet[0] != '\0' ? "&wet=" + String(wet) : "",
-    tags[0] != '\0' ? "&tags=" + String(tags) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  std::ostringstream stream;
 
-  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "GET", "", query);
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if(offset > 0)  stream << ",offset=" << offset;
+  if(child > 0 ) stream << ",child=" << child;
+  if(date > 0 ) stream << ",date=" << dateTime(date, BB_DATE_FORMAT);
+  if(date_max > 0 ) stream << ",date_max=" << dateTime(date_max, BB_DATE_FORMAT);
+  if(date_min > 0 ) stream << ",date_min=" << dateTime(date_min, BB_DATE_FORMAT);
+  if(colour[0] != '\0' ) stream << ",colour=" << colour;
+  if(solid ) stream << ",solid=true";
+  if(wet ) stream << ",wet=true";
+  if(tags[0][0] != '\0' )
+  {
+    stream << ",tags=" << tags;
+    for(int i = 0; i < MAX_TAGS; i++)
+    {
+      if(i > 0) stream << ",";
+      stream << tags[i];
+    }
+  } 
+  if(ordering[0] != '\0' ) stream << ",ordering=" << ordering;
+  
+
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "GET", "", stream.str().c_str());
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -377,12 +352,12 @@ BabyApi::searchResults<BabyApi::DiaperChange> BabyApi::findDiaperChanges(
     outcome.results[count].id = diaperChangeRecord["id"];
     outcome.results[count].child = diaperChangeRecord["child"];
     outcome.results[count].amount = diaperChangeRecord["amount"];
-    diaperChangeRecord["color"].as<String>().toCharArray(outcome.results[count].color, 8);
+    outcome.results[count].color = diaperChangeRecord["color"];
     outcome.results[count].solid = diaperChangeRecord["solid"];
     outcome.results[count].wet = diaperChangeRecord["wet"];
-    diaperChangeRecord["time"].as<String>().toCharArray(outcome.results[count].time, 33);
-    diaperChangeRecord["notes"].as<String>().toCharArray(outcome.results[count].notes, 256);
-    deserialiseTags(diaperChangeRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].time = diaperChangeRecord["time"];
+    outcome.results[count].notes = diaperChangeRecord["notes"];
+    copyArray(diaperChangeRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -394,23 +369,23 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
     uint16_t child,
     bool wet,
     bool solid,
-    char * color = {},
+    const char * color = {},
     float amount = NAN,
-    char * notes = {},
-    char * tags = {})
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
-  return logDiaperChange(child, "", wet, solid, color, amount, notes, tags);
+  return logDiaperChange(child, 0, wet, solid, color, amount, notes, tags);
 }
 
 BabyApi::DiaperChange BabyApi::logDiaperChange(
     uint16_t child,
-    char * time,
+    time_t time,
     bool wet = false,
     bool solid = false,
-    char * color = {},
+    const char * color = {},
     float amount = NAN,
-    char * notes = {},
-    char * tags = {})
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   
   BabyApi::DiaperChange outcome;
@@ -426,11 +401,9 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
   if (!isnan(amount))
     doc["amount"] = amount;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -441,13 +414,13 @@ BabyApi::DiaperChange BabyApi::logDiaperChange(
   outcome.id = response["id"];
   outcome.child = response["child"];
   outcome.amount = response["amount"];
-  response["color"].as<String>().toCharArray(outcome.color,8);
+  outcome.color = response["color"];
   outcome.solid = response["solid"];
   outcome.wet = response["wet"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
+  outcome.time = response["time"];
+  outcome.notes = response["notes"];
 
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -469,12 +442,13 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(uint16_t id)
   outcome.id = response["id"];
   outcome.child = response["child"];
   outcome.amount = response["amount"];
-  response["color"].as<String>().toCharArray(outcome.color,8);
+  outcome.color = response["color"];
   outcome.solid = response["solid"];
   outcome.wet = response["wet"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.time = response["time"];
+  outcome.notes = response["notes"];
+
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -482,15 +456,15 @@ BabyApi::DiaperChange BabyApi::getDiaperChange(uint16_t id)
 BabyApi::DiaperChange BabyApi::updateDiaperChange(
     uint16_t id,
     uint16_t child = 0,
-    char * time = {},
-    char * wet = {},
-    char * solid = {},
-    char * color = {},
+    time_t time = {},
+    bool wet = {},
+    bool solid = {},
+    const char * color = {},
     float amount = NAN,
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   
   BabyApi::DiaperChange outcome;
@@ -499,11 +473,11 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
 
   if (child > 0)
     doc["child"] = child;
-  if (time[0] != '\0')
+  if (time > 0)
     doc["time"] = time;
-  if (wet[0] != '\0')
+  if (wet)
     doc["wet"] = wet;
-  if (solid[0] != '\0')
+  if (solid)
     doc["solid"] = solid;
   if (color[0] != '\0')
     doc["color"] = color;
@@ -512,13 +486,11 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
   snprintf(parameters, 256,"/%d/",id);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(CHANGES_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -529,12 +501,13 @@ BabyApi::DiaperChange BabyApi::updateDiaperChange(
   outcome.id = response["id"];
   outcome.child = response["child"];
   outcome.amount = response["amount"];
-  response["color"].as<String>().toCharArray(outcome.color,8);
+  outcome.color = response["color"];
   outcome.solid = response["solid"];
   outcome.wet = response["wet"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.time = response["time"];
+  outcome.notes = response["notes"];
+
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -551,26 +524,26 @@ bool BabyApi::removeDiaperChange(uint16_t id)
 
 BabyApi::searchResults<BabyApi::Child> BabyApi::findChildren(
     uint16_t offset = 0,
-    char * first_name = {},
-    char * last_name = {},
-    char * birth_date = {},
-    char * slug = {},
-    char * ordering = {})
+    const char * first_name = {},
+    const char * last_name = {},
+    time_t birth_date = 0,
+    const char * slug = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Child> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    first_name[0] != '\0' ? ",first_name=" + String(first_name) : "",
-    last_name[0] != '\0' ? "&last_name=" + String(last_name) : "",
-    birth_date[0] != '\0' ? "&birth_date=" + String(birth_date) : "",
-    slug[0] != '\0' ? "&slug=" + String(slug) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
 
-  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "GET", "", query);
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( first_name[0] != '\0' ) stream << ",first_name=" << first_name;
+  if( last_name[0] != '\0' ) stream << ",last_name=" << last_name;
+  if( birth_date > 0 ) stream << ",birth_date=" << dateTime(birth_date, BB_DATE_FORMAT);
+  if( slug[0] != '\0' ) stream << ",slug=" << slug;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
+
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "GET", "", stream.str().c_str());
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -585,10 +558,11 @@ BabyApi::searchResults<BabyApi::Child> BabyApi::findChildren(
   for (JsonObject childeRecord : results)
   {
     outcome.results[count].id = childeRecord["id"];
-    childeRecord["first_name"].as<String>().toCharArray(outcome.results[count].first_name,256);
-    childeRecord["last_name"].as<String>().toCharArray(outcome.results[count].last_name,256);
-    childeRecord["birth_date"].as<String>().toCharArray(outcome.results[count].birth_date,11);
-    childeRecord["picture"].as<String>().toCharArray(outcome.results[count].picture,256);
+    outcome.results[count].first_name = childeRecord["first_name"];
+    outcome.results[count].last_name = childeRecord["last_name"];
+    outcome.results[count].birth_date = childeRecord["birth_date"];
+    outcome.results[count].picture = childeRecord["picture"];
+    outcome.results[count].slug = childeRecord["slug"];
     count++;
   }
 
@@ -596,10 +570,10 @@ BabyApi::searchResults<BabyApi::Child> BabyApi::findChildren(
 }
 
 BabyApi::Child BabyApi::newChild(
-    char * first_name,
-    char * last_name,
-    char * birth_date,
-    char * picture = {})
+    const char * first_name,
+    const char * last_name,
+    time_t birth_date,
+    const char * picture = {})
 {
   BabyApi::Child outcome;
 
@@ -607,12 +581,10 @@ BabyApi::Child BabyApi::newChild(
 
   doc["first_name"] = first_name;
   doc["last_name"] = last_name;
-  doc["birth_date"] = birth_date;
+  doc["birth_date"] = dateTime(birth_date, BB_DATE_FORMAT);
   doc["picture"] = picture;
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(CHILDREN_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -621,16 +593,16 @@ BabyApi::Child BabyApi::newChild(
   }
 
   outcome.id = response["id"];
-  response["first_name"].as<String>().toCharArray(outcome.first_name,256);
-  response["last_name"].as<String>().toCharArray(outcome.last_name,256);
-  response["birth_date"].as<String>().toCharArray(outcome.birth_date,11);
-  response["picture"].as<String>().toCharArray(outcome.picture,256);
-  response["slug"].as<String>().toCharArray(outcome.slug,101);
+  outcome.first_name = response["first_name"];
+  outcome.last_name = response["last_name"];
+  outcome.birth_date = response["birth_date"];
+  outcome.picture = response["picture"];
+  outcome.slug = response["slug"];
 
   return outcome;
 }
 
-BabyApi::Child BabyApi::getChild(char * slug)
+BabyApi::Child BabyApi::getChild(const char * slug)
 {
 
   BabyApi::Child outcome;
@@ -646,22 +618,22 @@ BabyApi::Child BabyApi::getChild(char * slug)
   }
 
   outcome.id = response["id"];
-  response["first_name"].as<String>().toCharArray(outcome.first_name,256);
-  response["last_name"].as<String>().toCharArray(outcome.last_name,256);
-  response["birth_date"].as<String>().toCharArray(outcome.birth_date,11);
-  response["picture"].as<String>().toCharArray(outcome.picture,256);
-  response["slug"].as<String>().toCharArray(outcome.slug,101);
+  outcome.first_name = response["first_name"];
+  outcome.last_name = response["last_name"];
+  outcome.birth_date = response["birth_date"];
+  outcome.picture = response["picture"];
+  outcome.slug = response["slug"];
 
   return outcome;
 }
 
 BabyApi::Child BabyApi::updateChild(
-    char * slug,
-    char * first_name = {},
-    char * last_name = {},
-    char * birth_date = {},
+    const char * slug,
+    const char * first_name = {},
+    const char * last_name = {},
+    time_t birth_date = {},
     bool updatePicture = false,
-    char * picture = {})
+    const char * picture = {})
 {
   
   BabyApi::Child outcome;
@@ -672,12 +644,10 @@ BabyApi::Child BabyApi::updateChild(
     doc["first_name"] = first_name;
   if (last_name[0] != '\0')
     doc["last_name"] = last_name;
-  if (birth_date[0] != '\0')
-    doc["birth_date"] = birth_date;
+  if (birth_date > 0)
+    doc["birth_date"] = dateTime(birth_date, BB_DATE_FORMAT);
   if (updatePicture)
     doc["picture"] = picture;
-
-  serializeJson(doc, requestBody);
 
   snprintf(parameters, 256,"/%s/",slug);
 
@@ -690,16 +660,16 @@ BabyApi::Child BabyApi::updateChild(
   }
 
   outcome.id = response["id"];
-  response["first_name"].as<String>().toCharArray(outcome.first_name,256);
-  response["last_name"].as<String>().toCharArray(outcome.last_name,256);
-  response["birth_date"].as<String>().toCharArray(outcome.birth_date,11);
-  response["picture"].as<String>().toCharArray(outcome.picture,256);
-  response["slug"].as<String>().toCharArray(outcome.slug,101);
+  outcome.first_name = response["first_name"];
+  outcome.last_name = response["last_name"];
+  outcome.birth_date = response["birth_date"];
+  outcome.picture = response["picture"];
+  outcome.slug = response["slug"];
 
   return outcome;
 }
 
-bool BabyApi::removeChild(char *slug)
+bool BabyApi::removeChild(const char * slug)
 {
   snprintf(parameters, 256,"/%s/",slug);
 
@@ -712,35 +682,35 @@ bool BabyApi::removeChild(char *slug)
 BabyApi::searchResults<BabyApi::Feeding> BabyApi::findFeedingRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * start = {},
-    char * start_max = {},
-    char * start_min = {},
-    char * end = {},
-    char * end_max = {},
-    char * end_min = {},
-    char * type = {},
-    char * method = {},
-    char * tags = {},
-    char * ordering = {})
+    time_t start = {},
+    time_t start_max = {},
+    time_t start_min = {},
+    time_t end = {},
+    time_t end_max = {},
+    time_t end_min = {},
+    const char * type = {},
+    const char * method = {},
+    const char * tags[MAX_TAGS] = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Feeding> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    start[0] != '\0' ? ",start=" + String(start) : "",
-    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
-    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
-    end[0] != '\0' ? ",end=" + String(start) : "",
-    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
-    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
-    type[0] != '\0' ? "&type=" + String(type) : "",
-    method[0] != '\0' ? "&method=" + String(method) : "",
-    tags[0] != '\0' ? "&tags=" + String(tags) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( start > 0 ) stream << ",start="<< dateTime(start,BB_DATE_FORMAT);
+  if( start_max > 0 ) stream << ",start_max=" << dateTime(start_max,BB_DATE_FORMAT);
+  if( start_min > 0 ) stream << ",start_min=" << dateTime(start_min,BB_DATE_FORMAT);
+  if( end > 0 ) stream << ",end=" << dateTime(end,BB_DATE_FORMAT);
+  if( end_max > 0 ) stream << ",end_max=" << dateTime(end_max,BB_DATE_FORMAT);
+  if( end_min > 0 ) stream << ",end_min=" << dateTime(end_min,BB_DATE_FORMAT);
+  if( type[0] != '\0' ) stream << ",type=" << type;
+  if( method[0] != '\0' ) stream << ",method=" << method;
+  if( tags[0] != '\0' ) stream << ",tags=" << tags;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -759,13 +729,13 @@ BabyApi::searchResults<BabyApi::Feeding> BabyApi::findFeedingRecords(
     outcome.results[count].id = feedingRecord["id"];
     outcome.results[count].child = feedingRecord["child"].as<int>();
     outcome.results[count].amount = feedingRecord["amount"].as<float>();
-    feedingRecord["duration"].as<String>().toCharArray(outcome.results[count].duration,22);
-    feedingRecord["start"].as<String>().toCharArray(outcome.results[count].start,33);
-    feedingRecord["end"].as<String>().toCharArray(outcome.results[count].end,33);
-    feedingRecord["method"].as<String>().toCharArray(outcome.results[count].method,13);
-    feedingRecord["type"].as<String>().toCharArray(outcome.results[count].type,22);
-    feedingRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(feedingRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].duration = feedingRecord["duration"];
+    outcome.results[count].start = feedingRecord["start"];
+    outcome.results[count].end = feedingRecord["end"];
+    outcome.results[count].method = feedingRecord["method"];
+    outcome.results[count].type = feedingRecord["type"];
+    outcome.results[count].notes = feedingRecord["notes"];
+    copyArray(feedingRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -775,16 +745,16 @@ BabyApi::searchResults<BabyApi::Feeding> BabyApi::findFeedingRecords(
 
 BabyApi::Feeding BabyApi::logFeeding(
     uint16_t timer,
-    char * type,
-    char * method,
+    const char * type,
+    const char * method,
     float amount,
-    char * notes = {},
-    char * tags = {})
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   return logFeeding(
       0,
-      "",
-      "",
+      0,
+      0,
       timer,
       type,
       method,
@@ -795,13 +765,13 @@ BabyApi::Feeding BabyApi::logFeeding(
 
 BabyApi::Feeding BabyApi::logFeeding(
     uint16_t child,    // Required unless a Timer value is provided.
-    char * start, // Required unless a Timer value is provided.
-    char * end,   // Required unless a Timer value is provided.
-    char * type,
-    char * method,
+    time_t start, // Required unless a Timer value is provided.
+    time_t end,   // Required unless a Timer value is provided.
+    const char * type,
+    const char * method,
     float amount = NAN,
-    char * notes = {},
-    char * tags = {})
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   return logFeeding(
       child,
@@ -817,35 +787,37 @@ BabyApi::Feeding BabyApi::logFeeding(
 
 BabyApi::Feeding BabyApi::logFeeding(
     uint16_t child = 0,          // Required unless a Timer value is provided.
-    char * start = {}, // Required unless a Timer value is provided.
-    char * end = {},   // Required unless a Timer value is provided.
+    time_t start = {}, // Required unless a Timer value is provided.
+    time_t end = {},   // Required unless a Timer value is provided.
     uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
-    char * type = {},
-    char * method = {},
+    const char * type = {},
+    const char * method = {},
     float amount = NAN,
-    char * notes = {},
-    char * tags = {})
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Feeding outcome;
   doc.clear();
 
   // if no tmer value present, child start and end are required fields
-  if (timer == 0 && (child == 0 || start[0] != '\0'  || end[0] != '\0' ))
+  if (timer == 0 && (child == 0 || start == 0  || end == 0 ))
   {
     Serial.println("Missing child, start and end, these are required if no timer id provided:");
     Serial.print("child: ");
     Serial.println(child);
     Serial.print("start: ");
-    Serial.println(start);
+    Serial.println(dateTime(start,BB_DATE_FORMAT));
     Serial.print("end: ");
-    Serial.println(end);
+    Serial.println(dateTime(end,BB_DATE_FORMAT));
     return outcome;
   }
 
   if (child > 0)
     doc["child"] = child;
-  doc["start"] = start;
-  doc["end"] = end;
+  if (child > 0)
+    doc["start"] = dateTime(start,BB_DATE_FORMAT);
+  if (child > 0)
+    doc["end"] = dateTime(end,BB_DATE_FORMAT);
   if (timer > 0)
     doc["timer"] = timer;
   doc["type"] = type;
@@ -853,11 +825,9 @@ BabyApi::Feeding BabyApi::logFeeding(
   if (!isnan(amount))
     doc["amount"] = amount;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -868,13 +838,13 @@ BabyApi::Feeding BabyApi::logFeeding(
   outcome.id = response["id"];
   outcome.child = response["child"].as<int>();
   outcome.amount = response["amount"].as<float>();
-  response["duration"].as<String>().toCharArray(outcome.duration,22);
-  response["start"].as<String>().toCharArray(outcome.start,33);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["method"].as<String>().toCharArray(outcome.method,13);
-  response["type"].as<String>().toCharArray(outcome.type,22);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.duration = response["duration"];
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.method = response["method"];
+  outcome.type = response["type"];
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -896,13 +866,13 @@ BabyApi::Feeding BabyApi::getFeeding(uint16_t id)
   outcome.id = response["id"];
   outcome.child = response["child"].as<int>();
   outcome.amount = response["amount"].as<float>();
-  response["duration"].as<String>().toCharArray(outcome.duration,22);
-  response["start"].as<String>().toCharArray(outcome.start,33);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["method"].as<String>().toCharArray(outcome.method,13);
-  response["type"].as<String>().toCharArray(outcome.type,22);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.duration = response["duration"];
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.method = response["method"];
+  outcome.type = response["type"];
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -910,15 +880,15 @@ BabyApi::Feeding BabyApi::getFeeding(uint16_t id)
 BabyApi::Feeding BabyApi::updateFeeding(
     uint16_t id,
     uint16_t child = 0,          // Required unless a Timer value is provided.
-    char * start = {}, // Required unless a Timer value is provided.
-    char * end = {},   // Required unless a Timer value is provided.
-    char * method = {},
-    char * type = {},
+    time_t start = {}, // Required unless a Timer value is provided.
+    time_t end = {},   // Required unless a Timer value is provided.
+    const char * method = {},
+    const char * type = {},
     float amount = NAN,
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Feeding outcome;
   
@@ -926,10 +896,10 @@ BabyApi::Feeding BabyApi::updateFeeding(
 
   if (child > 0)
     doc["child"] = child;
-  if (start[0] != '\0' )
-    doc["start"] = start;
-  if (start[0] != '\0' )
-    doc["end"] = end;
+  if (start > 0)
+    doc["start"] = dateTime(start,BB_DATE_FORMAT);
+  if (end > 0)
+    doc["end"] = dateTime(end,BB_DATE_FORMAT);
   if (type[0] != '\0')
     doc["type"] = type;
   if (method[0] != '\0')
@@ -939,13 +909,13 @@ BabyApi::Feeding BabyApi::updateFeeding(
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(FEEDINGS_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -956,13 +926,13 @@ BabyApi::Feeding BabyApi::updateFeeding(
   outcome.id = response["id"];
   outcome.child = response["child"].as<int>();
   outcome.amount = response["amount"].as<float>();
-  response["duration"].as<String>().toCharArray(outcome.duration,22);
-  response["start"].as<String>().toCharArray(outcome.start,33);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["method"].as<String>().toCharArray(outcome.method,13);
-  response["type"].as<String>().toCharArray(outcome.type,22);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.duration = response["duration"];
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.method = response["method"];
+  outcome.type = response["type"];
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -980,19 +950,19 @@ bool BabyApi::removeFeeding(uint16_t id)
 BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenceRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = {},
-    char * ordering = {})
+    time_t date = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::HeadCircumference> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( date > 0 ) stream << ",date=" + dateTime(date, BB_DATE_FORMAT);
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -1010,10 +980,10 @@ BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenc
   {
     outcome.results[count].id = headCircumferenceRecord["id"];
     outcome.results[count].child = headCircumferenceRecord["child"];
-    response["date"].as<String>().toCharArray(outcome.results[count].date,33);
+    outcome.results[count].date = response["date"];
     outcome.results[count].head_circumference = headCircumferenceRecord["head_circumference"];
-    headCircumferenceRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(headCircumferenceRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].notes = headCircumferenceRecord["notes"];
+    copyArray(headCircumferenceRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -1024,23 +994,21 @@ BabyApi::searchResults<BabyApi::HeadCircumference> BabyApi::findHeadCircumferenc
 BabyApi::HeadCircumference BabyApi::logHeadCircumference(
     uint16_t child,
     float head_circumference,
-    char * date,
-    char * notes = {},
-    char * tags = {})
+    time_t date,
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::HeadCircumference outcome;
 
   doc.clear();
 
   doc["child"] = child;
-  doc["date"] = date;
+  doc["date"] = dateTime(date, BB_DATE_FORMAT);
   doc["head_circumference"] = head_circumference;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1050,10 +1018,10 @@ BabyApi::HeadCircumference BabyApi::logHeadCircumference(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.head_circumference = response["head_circumference"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1074,10 +1042,10 @@ BabyApi::HeadCircumference BabyApi::getHeadCircumference(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.head_circumference = response["head_circumference"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1086,11 +1054,11 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
     uint16_t id,
     uint16_t child = 0,
     float head_circumference = NAN,
-    char * date = {},
+    time_t date = {},
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::HeadCircumference outcome;
 
@@ -1098,20 +1066,20 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
 
   if (child > 0)
     doc["child"] = child;
-  if (date[0] != '\0')
-    doc["date"] = date;
+  if (date > 0)
+    doc["date"] = dateTime(date, BB_DATE_FORMAT);
   if (!isnan(head_circumference))
     doc["head_circumference"] = head_circumference;
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(HEAD_CIRCUMFERENCE_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1121,10 +1089,10 @@ BabyApi::HeadCircumference BabyApi::updateHeadCircumference(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.head_circumference = response["head_circumference"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(), outcome.tags);
 
   return outcome;
 }
@@ -1142,21 +1110,20 @@ bool BabyApi::removeHeadCircumference(uint16_t id)
 BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = {},
-    char * ordering = {})
+    time_t date = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Height> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( date > 0 ) stream << ",date=" << dateTime(date, BB_DATE_FORMAT);
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
-  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "GET", "", query);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "GET", "", stream.str().c_str());
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1172,10 +1139,10 @@ BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
   {
     outcome.results[count].id = heightRecord["id"];
     outcome.results[count].child = heightRecord["child"];
-    heightRecord["date"].as<String>().toCharArray(outcome.results[count].date,33);
+    outcome.results[count].date = heightRecord["date"];
     outcome.results[count].height = heightRecord["height"];
-    heightRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(heightRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].notes = heightRecord["notes"];
+    copyArray(heightRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -1186,23 +1153,23 @@ BabyApi::searchResults<BabyApi::Height> BabyApi::findHeightRecords(
 BabyApi::Height BabyApi::logHeight(
     uint16_t child,
     float height,
-    char * date,
-    char * notes = {},
-    char * tags = {})
+    time_t date,
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Height outcome;
 
   doc.clear();
 
   doc["child"] = child;
-  doc["date"] = date;
+  doc["date"] = dateTime(date,BB_DATE_FORMAT);
   doc["height"] = height;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
-  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1212,10 +1179,10 @@ BabyApi::Height BabyApi::logHeight(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.height = response["height"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1236,10 +1203,10 @@ BabyApi::Height BabyApi::getHeight(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.height = response["height"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1248,11 +1215,11 @@ BabyApi::Height BabyApi::updateHeight(
     uint16_t id,
     uint16_t child = 0,
     float height = NAN,
-    char * date = {},
+    time_t date = {},
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   Height outcome;
 
@@ -1260,20 +1227,20 @@ BabyApi::Height BabyApi::updateHeight(
 
   if (child > 0)
     doc["child"] = child;
-  if (date != '\0')
-    doc["date"] = date;
+  if (date > 0)
+    doc["date"] = dateTime(date, BB_DATE_FORMAT);
   if (!isnan(height))
     doc["height"] = height;
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(HEIGHT_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1283,10 +1250,10 @@ BabyApi::Height BabyApi::updateHeight(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
+  outcome.date = response["date"];
   outcome.height = response["height"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1304,25 +1271,24 @@ bool BabyApi::removeHeight(uint16_t id)
 BabyApi::searchResults<BabyApi::Note> BabyApi::findNotes(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = {},
-    char * date_max = {},
-    char * date_min = {},
-    char * tags = {},
-    char * ordering = {})
+    time_t date = {},
+    time_t date_max = {},
+    time_t date_min = {},
+    const char * tags[MAX_TAGS] = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Note> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
-    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
-    tags[0] != '\0' ? "&tags=" + String(tags) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( date > 0  ) stream << ",date=" << dateTime(date,BB_DATE_FORMAT);
+  if( date_max > 0  ) stream << ",date_max=" << dateTime(date_max,BB_DATE_FORMAT);
+  if( date_min > 0  ) stream << ",date_min=" << dateTime(date_min,BB_DATE_FORMAT);
+  if( tags[0] != '\0' ) stream << ",tags=" << tags;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -1340,9 +1306,9 @@ BabyApi::searchResults<BabyApi::Note> BabyApi::findNotes(
   {
     outcome.results[count].id = noteRecord["id"];
     outcome.results[count].child = noteRecord["child"];
-    noteRecord["date"].as<String>().toCharArray(outcome.results[count].date,33);
-    noteRecord["note"].as<String>().toCharArray(outcome.results[count].note,256);
-    deserialiseTags(noteRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].date = noteRecord["date"];
+    outcome.results[count].note = noteRecord["note"];
+    copyArray(noteRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -1352,22 +1318,20 @@ BabyApi::searchResults<BabyApi::Note> BabyApi::findNotes(
 
 BabyApi::Note BabyApi::createNote(
     uint16_t child,
-    char * note,
-    char * date,
-    char * tags = {})
+    const char * note,
+    time_t date,
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Note outcome;
 
   doc.clear();
 
   doc["child"] = child;
-  doc["date"] = date;
+  doc["date"] = dateTime(date,BB_DATE_FORMAT);
   doc["note"] = note;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1377,9 +1341,9 @@ BabyApi::Note BabyApi::createNote(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
-  response["note"].as<String>().toCharArray(outcome.note,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.date = response["date"];
+  outcome.note = response["note"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1400,9 +1364,9 @@ BabyApi::Note BabyApi::getNote(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
-  response["note"].as<String>().toCharArray(outcome.note,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.date = response["date"];
+  outcome.note = response["note"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1410,11 +1374,11 @@ BabyApi::Note BabyApi::getNote(uint16_t id)
 BabyApi::Note BabyApi::updateNote(
     uint16_t id,
     uint16_t child = 0,
-    char * date = {},
+    time_t date = {},
     bool updateNote = false,
-    char * note = {},
+    const char * note = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Note outcome;
 
@@ -1422,18 +1386,16 @@ BabyApi::Note BabyApi::updateNote(
 
   if (child > 0)
     doc["child"] = child;
-  if (date != '\0')
-    doc["date"] = date;
+  if (date > 0)
+    doc["date"] = dateTime(date,BB_DATE_FORMAT);
   if (updateNote)
     doc["note"] = note;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
-
-  serializeJson(doc, requestBody);
+    copyArray(tags, doc["tags"]);
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(NOTES_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1443,9 +1405,9 @@ BabyApi::Note BabyApi::updateNote(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
-  response["note"].as<String>().toCharArray(outcome.note,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.date = response["date"];
+  outcome.note = response["note"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1463,23 +1425,22 @@ bool BabyApi::removeNote(uint16_t id)
 BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = {},
-    char * date_max = {},
-    char * date_min = {},
-    char * ordering = {})
+    time_t date = {},
+    time_t date_max = {},
+    time_t date_min = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Pumping> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
-    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( date > 0  ) stream << ",date=" << dateTime(date,BB_DATE_FORMAT);
+  if( date_max > 0  ) stream << ",date_max=" << dateTime(date_max,BB_DATE_FORMAT);
+  if( date_min > 0  ) stream << ",date_min=" << dateTime(date_min,BB_DATE_FORMAT);
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -1497,10 +1458,10 @@ BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
   {
     outcome.results[count].id = pumpingRecord["id"];
     outcome.results[count].child = pumpingRecord["child"];
-    pumpingRecord["time"].as<String>().toCharArray(outcome.results[count].time,33);
+    outcome.results[count].time = pumpingRecord["time"];
     outcome.results[count].amount = pumpingRecord["amount"];
-    pumpingRecord["notes"].as<String>().toCharArray(outcome.results[count].notes , 256);
-    deserialiseTags(pumpingRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].notes = pumpingRecord["notes"];
+    copyArray(pumpingRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -1511,23 +1472,23 @@ BabyApi::searchResults<BabyApi::Pumping> BabyApi::findPumpingRecords(
 BabyApi::Pumping BabyApi::logPumping(
     uint16_t child,
     float amount,
-    char * time = {},
-    char * notes = {},
-    char * tags = {})
+    time_t time = {},
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Pumping outcome;
 
   doc.clear();
 
   doc["child"] = child;
-  doc["time"] = time;
+  doc["time"] = dateTime(time,BB_DATE_FORMAT);
   doc["amount"] = amount;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
-  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1537,10 +1498,10 @@ BabyApi::Pumping BabyApi::logPumping(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
+  outcome.time = response["time"];
   outcome.amount = response["amount"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1561,10 +1522,10 @@ BabyApi::Pumping BabyApi::getPumping(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
+  outcome.time = response["time"];
   outcome.amount = response["amount"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1573,11 +1534,11 @@ BabyApi::Pumping BabyApi::updatePumping(
     uint16_t id,
     uint16_t child = 0,
     float amount = NAN,
-    char * time = {},
+    time_t time = {},
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Pumping outcome;
 
@@ -1585,20 +1546,18 @@ BabyApi::Pumping BabyApi::updatePumping(
 
   if (child > 0)
     doc["child"] = child;
-  if (time != '\0')
-    doc["time"] = time;
+  if (time > 0)
+    doc["time"] = dateTime(time,BB_DATE_FORMAT);;
   if (!isnan(amount))
     doc["amount"] = amount;
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
-
-  serializeJson(doc, requestBody);
+    copyArray(tags, doc["tags"]);
 
   snprintf(parameters, 256, "/%d/", id);
 
-  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(PUMPING_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1608,10 +1567,10 @@ BabyApi::Pumping BabyApi::updatePumping(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
+  outcome.time = response["time"];
   outcome.amount = response["amount"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1629,31 +1588,31 @@ bool BabyApi::removePumping(uint16_t id)
 BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * start = {},
-    char * start_max = {},
-    char * start_min = {},
-    char * end = {},
-    char * end_max = {},
-    char * end_min = {},
-    char * tags = {},
-    char * ordering = {})
+    time_t start = {},
+    time_t start_max = {},
+    time_t start_min = {},
+    time_t end = {},
+    time_t end_max = {},
+    time_t end_min = {},
+    const char * tags[MAX_TAGS] = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Sleep> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    start[0] != '\0' ? ",start=" + String(start) : "",
-    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
-    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
-    end[0] != '\0' ? ",end=" + String(start) : "",
-    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
-    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
-    tags[0] != '\0' ? "&tags=" + String(tags) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( start > 0 ) stream << ",start="<< dateTime(start,BB_DATE_FORMAT);
+  if( start_max > 0 ) stream << ",start_max=" << dateTime(start_max,BB_DATE_FORMAT);
+  if( start_min > 0 ) stream << ",start_min=" << dateTime(start_min,BB_DATE_FORMAT);
+  if( end > 0 ) stream << ",end=" << dateTime(end,BB_DATE_FORMAT);
+  if( end_max > 0 ) stream << ",end_max=" << dateTime(end_max,BB_DATE_FORMAT);
+  if( end_min > 0 ) stream << ",end_min=" << dateTime(end_min,BB_DATE_FORMAT);
+  if( tags[0] != '\0' ) stream << ",tags=" << tags;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -1672,11 +1631,11 @@ BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
     outcome.results[count].id = sleepingRecord["id"];
     outcome.results[count].child = sleepingRecord["child"];
     outcome.results[count].nap = sleepingRecord["nap"].as<String>() == "True";
-    sleepingRecord["start"].as<String>().toCharArray(outcome.results[count].start,3);
-    sleepingRecord["end"].as<String>().toCharArray(outcome.results[count].end,33);
-    sleepingRecord["duration"].as<String>().toCharArray(outcome.results[count].duration,17);
-    sleepingRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(sleepingRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].start = sleepingRecord["start"];
+    outcome.results[count].end = sleepingRecord["end"];
+    outcome.results[count].duration = sleepingRecord["duration"];
+    outcome.results[count].notes = sleepingRecord["notes"];
+    copyArray(sleepingRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -1686,11 +1645,11 @@ BabyApi::searchResults<BabyApi::Sleep> BabyApi::findSleepRecords(
 
 BabyApi::Sleep BabyApi::logSleep(
     uint16_t child,          // Required unless a Timer value is provided.
-    char * start = {}, // Required unless a Timer value is provided.
-    char * end = {},   // Required unless a Timer value is provided.
+    time_t start = {}, // Required unless a Timer value is provided.
+    time_t end = {},   // Required unless a Timer value is provided.
     uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
-    char * notes = {},
-    char * tags = {})
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   Sleep outcome;
 
@@ -1703,24 +1662,22 @@ BabyApi::Sleep BabyApi::logSleep(
     Serial.print("child: ");
     Serial.println(child);
     Serial.print("start: ");
-    Serial.println(start);
+    Serial.println(dateTime(start,BB_DATE_FORMAT));
     Serial.print("end: ");
-    Serial.println(end);
+    Serial.println(dateTime(end,BB_DATE_FORMAT));
     return outcome;
   }
 
   if (child > 0)
     doc["child"] = child;
-  doc["start"] = start;
-  doc["end"] = end;
+  doc["start"] = dateTime(start,BB_DATE_FORMAT);
+  doc["end"] = dateTime(end,BB_DATE_FORMAT);
   if (timer > 0)
     doc["timer"] = timer;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1731,10 +1688,10 @@ BabyApi::Sleep BabyApi::logSleep(
   outcome.id = response["id"];
   outcome.child = response["child"];
   outcome.nap = response["nap"].as<String>() == "True";
-  response["start"].as<String>().toCharArray(outcome.start,3);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1756,11 +1713,11 @@ BabyApi::Sleep BabyApi::getSleep(uint16_t id)
   outcome.id = response["id"];
   outcome.child = response["child"];
   outcome.nap = response["nap"].as<String>() == "True";
-  response["start"].as<String>().toCharArray(outcome.start,3);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1768,12 +1725,12 @@ BabyApi::Sleep BabyApi::getSleep(uint16_t id)
 BabyApi::Sleep BabyApi::updateSleep(
     uint16_t id,
     uint16_t child = 0,
-    char * start = {},
-    char * end = {},
+    time_t start = {},
+    time_t end = {},
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   Sleep outcome;
 
@@ -1782,19 +1739,17 @@ BabyApi::Sleep BabyApi::updateSleep(
   if (child > 0)
     doc["child"] = child;
   if (start != '\0')
-    doc["start"] = start;
+    doc["start"] = dateTime(start, BB_DATE_FORMAT);
   if (end != '\0')
-    doc["end"] = end;
+    doc["end"] = dateTime(end, BB_DATE_FORMAT);
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
-
-  serializeJson(doc, requestBody);
+    copyArray(tags, doc["tags"]);
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(SLEEP_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1804,12 +1759,12 @@ BabyApi::Sleep BabyApi::updateSleep(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  outcome.nap = response["nap"].as<String>() == "True";
-  response["start"].as<String>().toCharArray(outcome.start,3);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.nap = response["nap"];
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -1826,20 +1781,20 @@ bool BabyApi::removeSleep(uint16_t id)
 
 BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
     uint16_t offset = 0,
-    char * name = {},
-    char * last_used = {},
-    char * ordering = {})
+    const char * name = {},
+    time_t last_used = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Tag> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    name > 0 ? ",name=" + String(name) : "",
-    last_used[0] != '\0' ? ",last_used=" + String(last_used) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( name[0] != '\0'  ) stream << ",name=" << name;
+  if( last_used > 0 ) stream << ",last_used="<< dateTime(last_used,BB_DATE_FORMAT);
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -1855,10 +1810,10 @@ BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
 
   for (JsonObject tagRecord : results)
   {
-    tagRecord["name"].as<String>().toCharArray(outcome.results[count].name, 256);
-    tagRecord["last_used"].as<String>().toCharArray(outcome.results[count].last_used, 33);
-    tagRecord["color"].as<String>().toCharArray(outcome.results[count].color, 8);
-    tagRecord["slug"].as<String>().toCharArray(outcome.results[count].slug, 101);
+    outcome.results[count].name = tagRecord["name"];
+    outcome.results[count].last_used = tagRecord["last_used"];
+    outcome.results[count].color = tagRecord["color"];
+    outcome.results[count].slug = tagRecord["slug"];
 
     count++;
   }
@@ -1867,8 +1822,8 @@ BabyApi::searchResults<BabyApi::Tag> BabyApi::findAllTags(
 }
 
 BabyApi::Tag BabyApi::createTag(
-    char * name,
-    char * colour = {})
+    const char * name,
+    const char * colour = {})
 {
   BabyApi::Tag outcome;
 
@@ -1877,9 +1832,9 @@ BabyApi::Tag BabyApi::createTag(
   doc["name"] = name;
   doc["colour"] = colour;
 
-  serializeJson(doc, requestBody);
+  
 
-  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1887,15 +1842,15 @@ BabyApi::Tag BabyApi::createTag(
     return outcome;
   }
 
-  response["name"].as<String>().toCharArray(outcome.name, 256);
-  response["last_used"].as<String>().toCharArray(outcome.last_used, 33);
-  response["color"].as<String>().toCharArray(outcome.color, 8);
-  response["slug"].as<String>().toCharArray(outcome.slug, 101);
+  outcome.name = response["name"];
+  outcome.last_used = response["last_used"];
+  outcome.color = response["color"];
+  outcome.slug = response["slug"];
 
   return outcome;
 }
 
-BabyApi::Tag BabyApi::getTag(char * slug)
+BabyApi::Tag BabyApi::getTag(const char * slug)
 {
   BabyApi::Tag outcome;
 
@@ -1909,20 +1864,20 @@ BabyApi::Tag BabyApi::getTag(char * slug)
     return outcome;
   }
 
-  response["name"].as<String>().toCharArray(outcome.name, 256);
-  response["last_used"].as<String>().toCharArray(outcome.last_used, 33);
-  response["color"].as<String>().toCharArray(outcome.color, 8);
-  response["slug"].as<String>().toCharArray(outcome.slug, 101);
+  outcome.name = response["name"];
+  outcome.last_used = response["last_used"];
+  outcome.color = response["color"];
+  outcome.slug = response["slug"];
 
   return outcome;
 }
 
 BabyApi::Tag BabyApi::updateTag(
-    char * slug,
+    const char * slug,
     bool updateName = false,
-    char * name = {},
+    const char * name = {},
     bool updateColour = false,
-    char * colour = {})
+    const char * colour = {})
 {
   BabyApi::Tag outcome;
 
@@ -1933,11 +1888,9 @@ BabyApi::Tag BabyApi::updateTag(
   if (updateColour)
     doc["colour"] = colour;
 
-  serializeJson(doc, requestBody);
-
   snprintf(parameters, 256,"/%s/",slug);
 
-  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(TAGS_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -1945,15 +1898,15 @@ BabyApi::Tag BabyApi::updateTag(
     return outcome;
   }
 
-  response["name"].as<String>().toCharArray(outcome.name, 256);
-  response["last_used"].as<String>().toCharArray(outcome.last_used, 33);
-  response["color"].as<String>().toCharArray(outcome.color, 8);
-  response["slug"].as<String>().toCharArray(outcome.slug, 101);
+  outcome.name = response["name"];
+  outcome.last_used = response["last_used"];
+  outcome.color = response["color"];
+  outcome.slug = response["slug"];
 
   return outcome;
 }
 
-bool BabyApi::removeTag(char * slug)
+bool BabyApi::removeTag(const char * slug)
 {
   snprintf(parameters, 256,"/%s/",slug);
 
@@ -1966,25 +1919,24 @@ bool BabyApi::removeTag(char * slug)
 BabyApi::searchResults<BabyApi::Temperature> BabyApi::findTemperatureRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = {},
-    char * date_max = {},
-    char * date_min = {},
-    char * tags = {},
-    char * ordering = {})
+    time_t date = {},
+    time_t date_max = {},
+    time_t date_min = {},
+    const char * tags[MAX_TAGS] = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Temperature> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    date_max[0] != '\0' ? "&date_max=" + String(date_max) : "",
-    date_min[0] != '\0' ? "&date_min=" + String(date_min) : "",
-    tags[0] != '\0' ? "&tags=" + String(tags) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( date > 0  ) stream << ",date=" << dateTime(date,BB_DATE_FORMAT);
+  if( date_max > 0  ) stream << ",date_max=" << dateTime(date_max,BB_DATE_FORMAT);
+  if( date_min > 0  ) stream << ",date_min=" << dateTime(date_min,BB_DATE_FORMAT);
+  if( tags[0] != '\0' ) stream << ",tags=" << tags;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -2002,10 +1954,10 @@ BabyApi::searchResults<BabyApi::Temperature> BabyApi::findTemperatureRecords(
   {
     outcome.results[count].id = temperatureRecord["id"];
     outcome.results[count].child = temperatureRecord["child"];
-    temperatureRecord["time"].as<String>().toCharArray(outcome.results[count].time,33);
+    outcome.results[count].time = temperatureRecord["time"];
     outcome.results[count].temperature = temperatureRecord["temperature"];
-    temperatureRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(temperatureRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].notes = temperatureRecord["notes"];
+    copyArray(temperatureRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -2016,23 +1968,21 @@ BabyApi::searchResults<BabyApi::Temperature> BabyApi::findTemperatureRecords(
 BabyApi::Temperature BabyApi::logTemperature(
     uint16_t child,
     float temperature,
-    char * time,
-    char * notes = {},
-    char * tags = {})
+    time_t time,
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Temperature outcome;
 
   doc.clear();
 
   doc["child"] = child;
-  doc["time"] = time;
+  doc["time"] = dateTime(time,BB_DATE_FORMAT);;
   doc["temperature"] = temperature;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2042,10 +1992,10 @@ BabyApi::Temperature BabyApi::logTemperature(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
+  outcome.time = response["time"];
   outcome.temperature = response["temperature"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-    deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2066,10 +2016,10 @@ BabyApi::Temperature BabyApi::getTemperature(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
+  outcome.time = response["time"];
   outcome.temperature = response["temperature"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-    deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2078,11 +2028,11 @@ BabyApi::Temperature BabyApi::updateTemperature(
     uint16_t id = 0,
     uint16_t child = 0,
     float temperature = NAN,
-    char * time = {},
+    time_t time = {},
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Temperature outcome;
 
@@ -2090,20 +2040,20 @@ BabyApi::Temperature BabyApi::updateTemperature(
 
   if (child > 0)
     doc["child"] = child;
-  if (time != '\0')
-    doc["time"] = time;
+  if (time > 0)
+    doc["time"] = dateTime(time,BB_DATE_FORMAT);;
   if (!isnan(temperature))
     doc["temperature"] = temperature;
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(TEMPERATURE_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2113,10 +2063,10 @@ BabyApi::Temperature BabyApi::updateTemperature(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["time"].as<String>().toCharArray(outcome.time,33);
+  outcome.time = response["time"];
   outcome.temperature = response["temperature"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-    deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2134,33 +2084,33 @@ bool BabyApi::removeTemperature(uint16_t id)
 BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
     uint16_t offset = 0,
     uint16_t child = 0,
-     char * start = {},
-     char * start_max = {},
-     char * start_min = {},
-     char * end = {},
-     char * end_max = {},
-     char * end_min = {},
-     char * active = {},
+     time_t start = {},
+     time_t start_max = {},
+     time_t start_min = {},
+     time_t end = {},
+     time_t end_max = {},
+     time_t end_min = {},
+     TimerState active = UNKNOWN,
     uint16_t user = 0,
-     char * ordering = {})
+     const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Timer> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    start[0] != '\0' ? ",start=" + String(start) : "",
-    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
-    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
-    end[0] != '\0' ? ",end=" + String(start) : "",
-    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
-    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
-    active[0] != '\0' ? "&active=" + String(active) : "",
-    user > 0 ? "&user=" + String(user) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( start > 0 ) stream << ",start="<< dateTime(start,BB_DATE_FORMAT);
+  if( start_max > 0 ) stream << ",start_max=" << dateTime(start_max,BB_DATE_FORMAT);
+  if( start_min > 0 ) stream << ",start_min=" << dateTime(start_min,BB_DATE_FORMAT);
+  if( end > 0 ) stream << ",end=" << dateTime(end,BB_DATE_FORMAT);
+  if( end_max > 0 ) stream << ",end_max=" << dateTime(end_max,BB_DATE_FORMAT);
+  if( end_min > 0 ) stream << ",end_min=" << dateTime(end_min,BB_DATE_FORMAT);
+  if( active != UNKNOWN ) stream << ",active=" << (active == ACTIVE) ? "true":"false";
+  if( user > 0 ) stream << ",user=" << user;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -2178,10 +2128,10 @@ BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
   {
     outcome.results[count].id = timerRecord["id"];
     outcome.results[count].child = timerRecord["child"];
-    timerRecord["duration"].as<String>().toCharArray(outcome.results[count].duration,17);
-    timerRecord["end"].as<String>().toCharArray(outcome.results[count].end,33);
+    outcome.results[count].start = timerRecord["start"];
+    outcome.results[count].end = timerRecord["end"];
+    outcome.results[count].duration = timerRecord["duration"];
     outcome.results[count].user = timerRecord["user"];
-    timerRecord["start"].as<String>().toCharArray(outcome.results[count].start,33);
 
     count++;
   }
@@ -2189,13 +2139,21 @@ BabyApi::searchResults<BabyApi::Timer> BabyApi::findTimers(
   return outcome;
 }
 
-uint16_t BabyApi::startTimer(uint16_t childId, char * name = {}, uint16_t timer = 0)
+uint16_t BabyApi::startTimer(
+      uint16_t childId = 0, 
+      const char * name = {}, 
+      uint16_t timer = 0)
 {
   BabyApi::Timer babyTimer;
 
+  if(timer == 0 && childId == 0)
+  {
+    Serial.println("Must provide an ID of a timer or the ID of a child that the timer is for.");
+  }
+
   if (timer == 0 && name[0] != '\0')
   {
-    // search for existing timer
+    // search for existing timer usin the child id and name
     BabyApi::searchResults<BabyApi::Timer> results;
 
     do
@@ -2214,7 +2172,7 @@ uint16_t BabyApi::startTimer(uint16_t childId, char * name = {}, uint16_t timer 
     } while (results.next > 0 && timer == 0);
   }
 
-  if (babyTimer.id > 0)
+  if (timer > 0)
   {
     // attempt to restart it
     babyTimer = restartTimer(timer);
@@ -2236,17 +2194,17 @@ BabyApi::Timer BabyApi::createTimer(
 
 BabyApi::Timer BabyApi::createTimer(
     uint16_t child,
-    char * name)
+    const char * name)
 {
   return createTimer(
       child,
       name,
-      "");
+      0);
 }
 
 BabyApi::Timer BabyApi::createTimer(
     uint16_t child,
-    char * start)
+    time_t start)
 {
   return createTimer(
       child,
@@ -2256,8 +2214,8 @@ BabyApi::Timer BabyApi::createTimer(
 
 BabyApi::Timer BabyApi::createTimer(
     uint16_t child,
-    char * name,
-    char * start)
+    const char * name,
+    time_t start)
 {
   BabyApi::Timer outcome;
 
@@ -2265,11 +2223,9 @@ BabyApi::Timer BabyApi::createTimer(
 
   doc["child"] = child;
   doc["name"] = name;
-  doc["start"] = start;
+  doc["start"] = dateTime(start, BB_DATE_FORMAT);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2279,10 +2235,10 @@ BabyApi::Timer BabyApi::createTimer(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
   outcome.user = response["user"];
-  response["start"].as<String>().toCharArray(outcome.start,33);
 
   return outcome;
 }
@@ -2303,10 +2259,10 @@ BabyApi::Timer BabyApi::getTimer(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
   outcome.user = response["user"];
-  response["start"].as<String>().toCharArray(outcome.start,33);
 
   return outcome;
 }
@@ -2314,8 +2270,8 @@ BabyApi::Timer BabyApi::getTimer(uint16_t id)
 BabyApi::Timer BabyApi::updateTimer(
     uint16_t id,
     uint16_t child = 0,
-    char * name = {},
-    char * start = {},
+    const char * name = {},
+    time_t start = {},
     uint16_t user = 0)
 {
   BabyApi::Timer outcome;
@@ -2326,16 +2282,16 @@ BabyApi::Timer BabyApi::updateTimer(
     doc["child"] = child;
   if (!name != '\0')
     doc["name"] = name;
-  if (!start != '\0')
-    doc["start"] = start;
+  if (!start > 0)
+    doc["start"] = dateTime(start, BB_DATE_FORMAT);
   if (user > 0)
     doc["user"] = user;
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "GET", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(TIMERS_ENDPOINT, "GET", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2345,10 +2301,10 @@ BabyApi::Timer BabyApi::updateTimer(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
   outcome.user = response["user"];
-  response["start"].as<String>().toCharArray(outcome.start,33);
 
   return outcome;
 }
@@ -2379,10 +2335,10 @@ BabyApi::Timer BabyApi::restartTimer(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
   outcome.user = response["user"];
-  response["start"].as<String>().toCharArray(outcome.start,33);
 
   return outcome;
 }
@@ -2403,10 +2359,10 @@ BabyApi::Timer BabyApi::stopTimer(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
   outcome.user = response["user"];
-  response["start"].as<String>().toCharArray(outcome.start,33);
 
   return outcome;
 }
@@ -2414,31 +2370,31 @@ BabyApi::Timer BabyApi::stopTimer(uint16_t id)
 BabyApi::searchResults<BabyApi::TummyTime> BabyApi::findTummyTimes(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * start = {},
-    char * start_max = {},
-    char * start_min = {},
-    char * end = {},
-    char * end_max = {},
-    char * end_min = {},
-    char * tags = {},
-    char * ordering = {})
+    time_t start = {},
+    time_t start_max = {},
+    time_t start_min = {},
+    time_t end = {},
+    time_t end_max = {},
+    time_t end_min = {},
+    const char * tags[MAX_TAGS] = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::TummyTime> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    start[0] != '\0' ? ",start=" + String(start) : "",
-    start_max[0] != '\0' ? "&start_max=" + String(start_max) : "",
-    start_min[0] != '\0' ? "&start_min=" + String(start_min) : "",
-    end[0] != '\0' ? ",end=" + String(start) : "",
-    end_max[0] != '\0' ? "&end_max=" + String(start_max) : "",
-    end_min[0] != '\0' ? "&end_min=" + String(start_min) : "",
-    tags[0] != '\0' ? "&tags=" + String(tags) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( start > 0 ) stream << ",start="<< dateTime(start,BB_DATE_FORMAT);
+  if( start_max > 0 ) stream << ",start_max=" << dateTime(start_max,BB_DATE_FORMAT);
+  if( start_min > 0 ) stream << ",start_min=" << dateTime(start_min,BB_DATE_FORMAT);
+  if( end > 0 ) stream << ",end=" << dateTime(end,BB_DATE_FORMAT);
+  if( end_max > 0 ) stream << ",end_max=" << dateTime(end_max,BB_DATE_FORMAT);
+  if( end_min > 0 ) stream << ",end_min=" << dateTime(end_min,BB_DATE_FORMAT);
+  if( tags[0] != '\0' ) stream << ",tags=" << tags;
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -2456,11 +2412,11 @@ BabyApi::searchResults<BabyApi::TummyTime> BabyApi::findTummyTimes(
   {
     outcome.results[count].id = tummyTimeRecord["id"];
     outcome.results[count].child = tummyTimeRecord["child"];
-    tummyTimeRecord["duration"].as<String>().toCharArray(outcome.results[count].duration,17);
-    tummyTimeRecord["end"].as<String>().toCharArray(outcome.results[count].end,33);
-    tummyTimeRecord["milestone"].as<String>().toCharArray(outcome.results[count].milestone,256);
-    tummyTimeRecord["start"].as<String>().toCharArray(outcome.results[count].start,33);
-    deserialiseTags(tummyTimeRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].start = tummyTimeRecord["start"];
+    outcome.results[count].end = tummyTimeRecord["end"];
+    outcome.results[count].duration = tummyTimeRecord["duration"];
+    outcome.results[count].milestone = tummyTimeRecord["milestone"];
+    copyArray(tummyTimeRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -2470,41 +2426,39 @@ BabyApi::searchResults<BabyApi::TummyTime> BabyApi::findTummyTimes(
 
 BabyApi::TummyTime BabyApi::logTummyTime(
     uint16_t child = 0,          // Required unless a Timer value is provided.
-    char * start = {}, // Required unless a Timer value is provided.
-    char * end = {},   // Required unless a Timer value is provided.
+    time_t start = {}, // Required unless a Timer value is provided.
+    time_t end = {},   // Required unless a Timer value is provided.
     uint16_t timer = 0,          // May be used in place of the Start, End, and/or Child values.
-    char * milestone = {},
-    char * tags = {})
+    const char * milestone = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::TummyTime outcome;
 
   doc.clear();
 
   // if no tmer value present, child start and end are required fields
-  if (timer == 0 && (child == 0 || start[0] != '\0' || end[0] != '\0'))
+  if (timer == 0 && (child == 0 || start == 0 || end == 0))
   {
     Serial.println("Missing child, start and end, these are required if no timer id provided:");
     Serial.print("child: ");
     Serial.println(child);
     Serial.print("start: ");
-    Serial.println(start);
+    Serial.println(dateTime(start,BB_DATE_FORMAT));
     Serial.print("end: ");
-    Serial.println(end);
+    Serial.println(dateTime(end,BB_DATE_FORMAT));
     return outcome;
   }
 
   if (child > 0)
     doc["child"] = child;
-  doc["start"] = start;
-  doc["end"] = end;
+  doc["start"] = dateTime(start,BB_DATE_FORMAT);
+  doc["end"] = dateTime(end,BB_DATE_FORMAT);
   if (timer > 0)
     doc["timer"] = timer;
   doc["milestone"] = milestone;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2514,11 +2468,11 @@ BabyApi::TummyTime BabyApi::logTummyTime(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["milestone"].as<String>().toCharArray(outcome.milestone,256);
-  response["start"].as<String>().toCharArray(outcome.start,33);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
+  outcome.milestone = response["milestone"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2539,11 +2493,11 @@ BabyApi::TummyTime BabyApi::getTummyTime(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["milestone"].as<String>().toCharArray(outcome.milestone,256);
-  response["start"].as<String>().toCharArray(outcome.start,33);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
+  outcome.milestone = response["milestone"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2551,12 +2505,12 @@ BabyApi::TummyTime BabyApi::getTummyTime(uint16_t id)
 BabyApi::TummyTime BabyApi::updateTummyTime(
     uint16_t id,
     uint16_t child = 0,
-    char * start = {},
-    char * end = {},
+    time_t start = {},
+    time_t end = {},
     bool updateMilestone = false,
-    char * milestone = {},
+    const char * milestone = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::TummyTime outcome;
 
@@ -2565,19 +2519,19 @@ BabyApi::TummyTime BabyApi::updateTummyTime(
   if (child > 0)
     doc["child"] = child;
   if (start != '\0')
-    doc["start"] = start;
+    doc["start"] = dateTime(start,BB_DATE_FORMAT);
   if (start != '\0')
-    doc["end"] = end;
+    doc["end"] = dateTime(end,BB_DATE_FORMAT);
   if (updateMilestone)
     doc["milestone"] = milestone;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(TUMMY_TIMES_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2587,11 +2541,11 @@ BabyApi::TummyTime BabyApi::updateTummyTime(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["duration"].as<String>().toCharArray(outcome.duration,17);
-  response["end"].as<String>().toCharArray(outcome.end,33);
-  response["milestone"].as<String>().toCharArray(outcome.milestone,256);
-  response["start"].as<String>().toCharArray(outcome.start,33);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.start = response["start"];
+  outcome.end = response["end"];
+  outcome.duration = response["duration"];
+  outcome.milestone = response["milestone"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2609,19 +2563,18 @@ bool BabyApi::removeTummyTime(uint16_t id)
 BabyApi::searchResults<BabyApi::Weight> BabyApi::findWeightRecords(
     uint16_t offset = 0,
     uint16_t child = 0,
-    char * date = {},
-    char * ordering = {})
+    time_t date = {},
+    const char * ordering = {})
 {
   BabyApi::searchResults<BabyApi::Weight> outcome;
   uint16_t count = 0;
+  std::ostringstream stream;
 
-  snprintf(query,256,"limit=%d%s%s%s%s%s%s%s%s%s%s",
-    SEARCH_LIMIT,
-    offset > 0 ? ",offset=" + String(offset) : "",
-    child > 0 ? ",child=" + String(child) : "",
-    date[0] != '\0' ? ",date=" + String(date) : "",
-    ordering[0] != '\0' ? ",ordering=" + String(ordering) : ""
-  );
+  stream << "limit=" << SEARCH_LIMIT;
+  if( offset > 0 ) stream << ",offset=" << offset;
+  if( child > 0 ) stream << ",child=" << child;
+  if( date > 0  ) stream << ",date=" << dateTime(date,BB_DATE_FORMAT);
+  if( ordering[0] != '\0' ) stream << ",ordering=" << ordering;
 
   int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "GET", "", query);
   Serial.println(httpsResponseCode);
@@ -2640,9 +2593,9 @@ BabyApi::searchResults<BabyApi::Weight> BabyApi::findWeightRecords(
     outcome.results[count].id = weightRecord["id"];
     outcome.results[count].child = weightRecord["child"];
     outcome.results[count].weight = weightRecord["weight"];
-    weightRecord["date"].as<String>().toCharArray(outcome.results[count].date,33);
-    weightRecord["notes"].as<String>().toCharArray(outcome.results[count].notes,256);
-    deserialiseTags(weightRecord["tags"].as<JsonArray>()).toCharArray(outcome.results[count].tags, 256);
+    outcome.results[count].date = weightRecord["date"];
+    outcome.results[count].notes = weightRecord["notes"];
+    copyArray(weightRecord["tags"].as<JsonArray>(),outcome.results[count].tags);
 
     count++;
   }
@@ -2653,23 +2606,21 @@ BabyApi::searchResults<BabyApi::Weight> BabyApi::findWeightRecords(
 BabyApi::Weight BabyApi::logWeight(
     uint16_t child,
     float weight,
-    char * date,
-    char * notes = {},
-    char * tags = {})
+    time_t date,
+    const char * notes = {},
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Weight outcome;
 
   doc.clear();
 
   doc["child"] = child;
-  doc["date"] = date;
+  doc["date"] = dateTime(date,BB_DATE_FORMAT);
   doc["weight"] = weight;
   doc["notes"] = notes;
-  doc["tags"] = serialiseTags(tags);
+  copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
-
-  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "POST", "", "", requestBody);
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "POST", "", "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2679,10 +2630,10 @@ BabyApi::Weight BabyApi::logWeight(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.weight = response["weight"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-    deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2703,10 +2654,10 @@ BabyApi::Weight BabyApi::getWeight(uint16_t id)
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.weight = response["weight"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-    deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2715,11 +2666,11 @@ BabyApi::Weight BabyApi::updateWeight(
     uint16_t id,
     uint16_t child = 0,
     float weight = NAN,
-    char * date = {},
+    time_t date = {},
     bool updateNotes = false,
-    char * notes = {},
+    const char * notes = {},
     bool updateTags = false,
-    char * tags = {})
+    const char * tags[MAX_TAGS] = {})
 {
   BabyApi::Weight outcome;
 
@@ -2728,19 +2679,19 @@ BabyApi::Weight BabyApi::updateWeight(
   if (child > 0)
     doc["child"] = child;
   if (date != '\0')
-    doc["date"] = date;
+    doc["date"] = dateTime(date,BB_DATE_FORMAT);
   if (!isnan(weight))
     doc["weight"] = weight;
   if (updateNotes)
     doc["notes"] = notes;
   if (updateTags)
-    doc["tags"] = serialiseTags(tags);
+    copyArray(tags, doc["tags"]);
 
-  serializeJson(doc, requestBody);
+  
 
   snprintf(parameters, 256,"/%d/",id);
 
-  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "PATCH", parameters, "", requestBody);
+  int httpsResponseCode = httpRequest(WEIGHT_ENDPOINT, "PATCH", parameters, "", true);
   Serial.println(httpsResponseCode);
 
   if(httpsResponseCode <= 0)
@@ -2750,10 +2701,10 @@ BabyApi::Weight BabyApi::updateWeight(
 
   outcome.id = response["id"];
   outcome.child = response["child"];
-  response["date"].as<String>().toCharArray(outcome.date,33);
+  outcome.date = response["date"];
   outcome.weight = response["weight"];
-  response["notes"].as<String>().toCharArray(outcome.notes,256);
-  deserialiseTags(response["tags"].as<JsonArray>()).toCharArray(outcome.tags, 256);
+  outcome.notes = response["notes"];
+  copyArray(response["tags"].as<JsonArray>(),outcome.tags);
 
   return outcome;
 }
@@ -2772,21 +2723,18 @@ BabyApi::Profile BabyApi::getProfile()
 {
   BabyApi::Profile outcome;
 
-  String jsonBuffer;
-  jsonBuffer = httpRequest(PROFILE_ENDPOINT, "GET");
-  Serial.println(jsonBuffer);
-
-  ResponseParser(jsonBuffer);
+  int httpsResponseCode = httpRequest(PROFILE_ENDPOINT, "GET");
+  Serial.println(httpsResponseCode);
 
   outcome.user.id = response["user"]["id"];
-  response["user"]["username"].as<String>().toCharArray(outcome.user.username,151);
-  response["user"]["first_name"].as<String>().toCharArray(outcome.user.first_name,151);
-  response["user"]["last_name"].as<String>().toCharArray(outcome.user.last_name,151);
-  response["user"]["email"].as<String>().toCharArray(outcome.user.email,151);
+  outcome.user.username = response["user"]["username"];
+  outcome.user.first_name = response["user"]["first_name"];
+  outcome.user.last_name = response["user"]["last_name"];
+  outcome.user.email = response["user"]["email"];
   outcome.user.is_staff = response["user"]["is_staff"];
-  response["language"].as<String>().toCharArray(outcome.language,256);
-  response["timezone"].as<String>().toCharArray(outcome.timezone,101);
-  response["api_key"].as<String>().toCharArray(outcome.api_key,129);
+  outcome.language = response["language"];
+  outcome.timezone = response["timezone"];
+  outcome.api_key = response["api_key"];
 
   return outcome;
 }
@@ -2814,12 +2762,8 @@ uint8_t BabyApi::getAllChildren(BabyApi::Child *children, uint8_t count)
 uint8_t BabyApi::recordFeeding(uint16_t timerId, uint8_t feedingType, uint8_t feedingMethod, float amount)
 {
   BabyApi::Feeding fed;
-  char buffer1[15],buffer2[15];
 
-  strcpy(buffer1,feedingTypes[feedingType]);
-  strcpy(buffer2,feedingMethods[feedingMethod]);
-
-  fed = babyApi.logFeeding(timerId, buffer1, buffer2, amount); 
+  fed = babyApi.logFeeding(timerId, feedingTypes[feedingType], feedingMethods[feedingMethod], amount); 
   
   return fed.id;
 }
@@ -2828,11 +2772,7 @@ uint8_t BabyApi::recordSleep(uint16_t timerId)
 {
   BabyApi::Sleep slept;
 
-  slept = babyApi.logSleep(
-      0,
-      "",
-      "",
-      timerId);
+  slept = babyApi.logSleep(0,0,0,timerId);
 
   return slept.id;
 }
@@ -2852,9 +2792,9 @@ uint8_t BabyApi::recordTummyTime(uint16_t timerId)
 
   tummy = babyApi.logTummyTime(
       0,
-      "",
-      "",
-      (int)timerId);
+      0,
+      0,
+      timerId);
 
   return tummy.id;
 }
